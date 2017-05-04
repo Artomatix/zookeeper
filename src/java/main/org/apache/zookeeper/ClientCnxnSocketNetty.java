@@ -1,255 +1,406 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package org.apache.zookeeper;
 
-import java.io.IOException;
-import java.net.InetSocketAddress;
-import java.net.SocketAddress;
-import java.nio.ByteBuffer;
-import java.util.List;
-import java.util.concurrent.Executors;
-
-import org.apache.log4j.Logger;
 import org.apache.zookeeper.ClientCnxn.EndOfStreamException;
 import org.apache.zookeeper.ClientCnxn.Packet;
-import org.apache.zookeeper.ZooDefs.OpCode;
+import org.apache.zookeeper.client.ZKClientConfig;
+import org.apache.zookeeper.common.X509Util;
 import org.jboss.netty.bootstrap.ClientBootstrap;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.ChannelFactory;
 import org.jboss.netty.channel.ChannelFuture;
+import org.jboss.netty.channel.ChannelFutureListener;
 import org.jboss.netty.channel.ChannelHandlerContext;
 import org.jboss.netty.channel.ChannelPipeline;
 import org.jboss.netty.channel.ChannelPipelineFactory;
-import org.jboss.netty.channel.ChannelState;
 import org.jboss.netty.channel.ChannelStateEvent;
 import org.jboss.netty.channel.Channels;
 import org.jboss.netty.channel.ExceptionEvent;
 import org.jboss.netty.channel.MessageEvent;
-import org.jboss.netty.channel.SimpleChannelHandler;
+import org.jboss.netty.channel.SimpleChannelUpstreamHandler;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
+import org.jboss.netty.handler.ssl.SslHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
+import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLEngine;
+
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.net.SocketAddress;
+import java.util.Iterator;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
+
+import static org.apache.zookeeper.common.X509Exception.SSLContextException;
+
+/**
+ * ClientCnxnSocketNetty implements ClientCnxnSocket abstract methods.
+ * It's responsible for connecting to server, reading/writing network traffic and
+ * being a layer between network data and higher level packets.
+ */
 public class ClientCnxnSocketNetty extends ClientCnxnSocket {
-    private static final Logger LOG = Logger
-            .getLogger(ClientCnxnSocketNetty.class);
+    private static final Logger LOG = LoggerFactory.getLogger(ClientCnxnSocketNetty.class);
 
-    private Channel channel;
+    ChannelFactory channelFactory = new NioClientSocketChannelFactory(
+            Executors.newCachedThreadPool(), Executors.newCachedThreadPool());
+    Channel channel;
+    CountDownLatch firstConnect;
+    ChannelFuture connectFuture;
+    Lock connectLock = new ReentrantLock();
+    AtomicBoolean disconnected = new AtomicBoolean();
+    AtomicBoolean needSasl = new AtomicBoolean();
+    Semaphore waitSasl = new Semaphore(0);
 
-    private ChannelFactory factory;
+    ClientCnxnSocketNetty(ZKClientConfig clientConfig) throws IOException {
+        this.clientConfig = clientConfig;
+        initProperties();
+    }
 
-    private boolean disconnected;
+    /**
+     * lifecycles diagram:
+     * <p/>
+     * loop:
+     * - try:
+     * - - !isConnected()
+     * - - - connect()
+     * - - doTransport()
+     * - catch:
+     * - - cleanup()
+     * close()
+     * <p/>
+     * Other non-lifecycle methods are in jeopardy getting a null channel
+     * when calling in concurrency. We must handle it.
+     */
 
     @Override
     boolean isConnected() {
+        // Assuming that isConnected() is only used to initiate connection,
+        // not used by some other connection status judgement.
         return channel != null;
-    }
-
-    private boolean doWrites(List<Packet> pendingQueue) {
-        boolean written = false;
-        while (!outgoingQueue.isEmpty() && channel.isWritable()) {
-            Packet p;
-            synchronized(outgoingQueue){
-                p = outgoingQueue.removeFirst();                
-            }
-
-            ByteBuffer pbb = p.bb;
-            ChannelFuture write;
-            synchronized(pendingQueue){
-                write = channel.write(ChannelBuffers
-                        .copiedBuffer(pbb));
-                pbb.position(pbb.limit());
-                if (p.header != null && p.header.getType() != OpCode.ping
-                        && p.header.getType() != OpCode.auth) {
-                    pendingQueue.add(p);
-                }               
-            }
-            if (p.header != null && p.header.getType() == OpCode.closeSession) {
-                // ensure that the close session is sent before
-                // we close the channel
-                write.awaitUninterruptibly();
-            }
-
-            written = true;
-            sentCount++;
-        }
-        return written;
     }
 
     @Override
     void connect(InetSocketAddress addr) throws IOException {
-        factory = new NioClientSocketChannelFactory(
-                Executors.newCachedThreadPool(),
-                Executors.newCachedThreadPool());
+        firstConnect = new CountDownLatch(1);
 
-        ClientBootstrap bootstrap = new ClientBootstrap(factory);
+        ClientBootstrap bootstrap = new ClientBootstrap(channelFactory);
 
-        bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
-            @Override
-            public ChannelPipeline getPipeline() {
-                return Channels.pipeline(new ZKClientHandler());
-            }
-        });
-
+        bootstrap.setPipelineFactory(new ZKClientPipelineFactory());
         bootstrap.setOption("soLinger", -1);
         bootstrap.setOption("tcpNoDelay", true);
 
-        disconnected = false;
-        bootstrap.connect(addr);
-    }
+        connectFuture = bootstrap.connect(addr);
+        connectFuture.addListener(new ChannelFutureListener() {
+            @Override
+            public void operationComplete(ChannelFuture channelFuture) throws Exception {
+                // this lock guarantees that channel won't be assgined after cleanup().
+                connectLock.lock();
+                try {
+                    if (!channelFuture.isSuccess() || connectFuture == null) {
+                        LOG.info("future isn't success, cause: {}", channelFuture.getCause());
+                        return;
+                    }
+                    // setup channel, variables, connection, etc.
+                    channel = channelFuture.getChannel();
 
-    @Override
-    void enableReadWriteOnly() {
+                    disconnected.set(false);
+                    initialized = false;
+                    lenBuffer.clear();
+                    incomingBuffer = lenBuffer;
 
-    }
+                    sendThread.primeConnection();
+                    updateNow();
+                    updateLastSendAndHeard();
 
-    /**
-     * Returns the address to which the socket is connected.
-     * 
-     * @return ip address of the remote side of the connection or null if not
-     *         connected
-     */
-    @Override
-    public SocketAddress getRemoteSocketAddress() {
-        if (channel == null) {
-            return null;
-        }
+                    if (sendThread.tunnelAuthInProgress()) {
+                        waitSasl.drainPermits();
+                        needSasl.set(true);
+                        sendPrimePacket();
+                    } else {
+                        needSasl.set(false);
+                    }
 
-        return channel.getRemoteAddress();
-    }
-
-    /**
-     * Returns the local address to which the socket is bound.
-     * 
-     * @return ip address of the remote side of the connection or null if not
-     *         connected
-     */
-    @Override
-    SocketAddress getLocalSocketAddress() {
-        if (channel == null) {
-            return null;
-        }
-
-        return channel.getLocalAddress();
+                    // we need to wake up on first connect to avoid timeout.
+                    wakeupCnxn();
+                    firstConnect.countDown();
+                    LOG.info("channel is connected: {}", channelFuture.getChannel());
+                } finally {
+                    connectLock.unlock();
+                }
+            }
+        });
     }
 
     @Override
     void cleanup() {
-        if (channel != null) {
-            if (LOG.isTraceEnabled()) {
-                LOG.trace("cleanup closing sessionId:0x"
-                        + Long.toHexString(sessionId));
+        connectLock.lock();
+        try {
+            if (connectFuture != null) {
+                connectFuture.cancel();
+                connectFuture = null;
             }
-            channel.close().awaitUninterruptibly();
+            if (channel != null) {
+                channel.close().awaitUninterruptibly();
+                channel = null;
+            }
+        } finally {
+            connectLock.unlock();
         }
-        channel = null;
-        if (factory != null) {
-            factory.releaseExternalResources();
+        Iterator<Packet> iter = outgoingQueue.iterator();
+        while (iter.hasNext()) {
+            Packet p = iter.next();
+            if (p == WakeupPacket.getInstance()) {
+                iter.remove();
+            }
         }
-        sendThread.cleanup();
     }
 
     @Override
     void close() {
-        // NO-OP
+        channelFactory.releaseExternalResources();
+    }
+
+    @Override
+    void saslCompleted() {
+        needSasl.set(false);
+        waitSasl.release();
+    }
+
+    @Override
+    void connectionPrimed() {
+    }
+
+    @Override
+    void packetAdded() {
+    }
+
+    @Override
+    void onClosing() {
+        firstConnect.countDown();
+        wakeupCnxn();
+        LOG.info("channel is told closing");
+    }
+
+    private void wakeupCnxn() {
+        if (needSasl.get()) {
+            waitSasl.release();
+        }
+        outgoingQueue.add(WakeupPacket.getInstance());
+    }
+
+    @Override
+    void doTransport(int waitTimeOut,
+                     List<Packet> pendingQueue,
+                     ClientCnxn cnxn)
+            throws IOException, InterruptedException {
+        try {
+            if (!firstConnect.await(waitTimeOut, TimeUnit.MILLISECONDS)) {
+                return;
+            }
+            Packet head = null;
+            if (needSasl.get()) {
+                if (!waitSasl.tryAcquire(waitTimeOut, TimeUnit.MILLISECONDS)) {
+                    return;
+                }
+            } else {
+                if ((head = outgoingQueue.poll(waitTimeOut, TimeUnit.MILLISECONDS)) == null) {
+                    return;
+                }
+            }
+            // check if being waken up on closing.
+            if (!sendThread.getZkState().isAlive()) {
+                // adding back the patck to notify of failure in conLossPacket().
+                addBack(head);
+                return;
+            }
+            // channel disconnection happened
+            if (disconnected.get()) {
+                addBack(head);
+                throw new EndOfStreamException("channel for sessionid 0x"
+                        + Long.toHexString(sessionId)
+                        + " is lost");
+            }
+            if (head != null) {
+                doWrite(pendingQueue, head, cnxn);
+            }
+        } finally {
+            updateNow();
+        }
+    }
+
+    private void addBack(Packet head) {
+        if (head != null && head != WakeupPacket.getInstance()) {
+            outgoingQueue.addFirst(head);
+        }
+    }
+
+    private void sendPkt(Packet p) {
+        // Assuming the packet will be sent out successfully. Because if it fails,
+        // the channel will close and clean up queues.
+        p.createBB();
+        updateLastSend();
+        sentCount++;
+        channel.write(ChannelBuffers.wrappedBuffer(p.bb));
+    }
+
+    private void sendPrimePacket() {
+        // assuming the first packet is the priming packet.
+        sendPkt(outgoingQueue.remove());
+    }
+
+    /**
+     * doWrite handles writing the packets from outgoingQueue via network to server.
+     */
+    private void doWrite(List<Packet> pendingQueue, Packet p, ClientCnxn cnxn) {
+        updateNow();
+        while (true) {
+            if (p != WakeupPacket.getInstance()) {
+                if ((p.requestHeader != null) &&
+                        (p.requestHeader.getType() != ZooDefs.OpCode.ping) &&
+                        (p.requestHeader.getType() != ZooDefs.OpCode.auth)) {
+                    p.requestHeader.setXid(cnxn.getXid());
+                    synchronized (pendingQueue) {
+                        pendingQueue.add(p);
+                    }
+                }
+                sendPkt(p);
+            }
+            if (outgoingQueue.isEmpty()) {
+                break;
+            }
+            p = outgoingQueue.remove();
+        }
+    }
+
+    @Override
+    void sendPacket(ClientCnxn.Packet p) throws IOException {
+        if (channel == null) {
+            throw new IOException("channel has been closed");
+        }
+        sendPkt(p);
+    }
+
+    @Override
+    SocketAddress getRemoteSocketAddress() {
+        Channel copiedChanRef = channel;
+        return (copiedChanRef == null) ? null : copiedChanRef.getRemoteAddress();
+    }
+
+    @Override
+    SocketAddress getLocalSocketAddress() {
+        Channel copiedChanRef = channel;
+        return (copiedChanRef == null) ? null : copiedChanRef.getLocalAddress();
     }
 
     @Override
     void testableCloseSocket() throws IOException {
-        LOG.info("testableCloseSocket() called");
-        channel.disconnect().awaitUninterruptibly();
-    }
-
-    @Override
-    void wakeupCnxn() {
-        synchronized (outgoingQueue) {
-            outgoingQueue.notifyAll();
+        Channel copiedChanRef = channel;
+        if (copiedChanRef != null) {
+            copiedChanRef.disconnect().awaitUninterruptibly();
         }
     }
 
-    @Override
-    void enableWrite() {
 
+    // *************** <END> CientCnxnSocketNetty </END> ******************
+    private static class WakeupPacket {
+        private static final Packet instance = new Packet(null, null, null, null, null);
+
+        protected WakeupPacket() {
+            // Exists only to defeat instantiation.
+        }
+
+        public static Packet getInstance() {
+            return instance;
+        }
     }
+    /**
+     * ZKClientPipelineFactory is the netty pipeline factory for this netty
+     * connection implementation.
+     */
+    private class ZKClientPipelineFactory implements ChannelPipelineFactory {
+        private SSLContext sslContext = null;
+        private SSLEngine sslEngine = null;
 
-    @Override
-    void doTransport(int waitTimeOut, List<Packet> pendingQueue)
-            throws EndOfStreamException {
-        if (disconnected) {
-            throw new EndOfStreamException("connection for sessionid 0x"
-                    + Long.toHexString(sessionId)
-                    + " lost, likely server has closed socket");
-
-        }
-
-        // channel may not have been connected yet
-        if (isConnected() && doWrites(pendingQueue)) {
-            updateLastSend();
-        }
-
-        if (sendThread.getZkState().isAlive()) {
-            if (LOG.isTraceEnabled()) {
-                LOG.trace("WAIT to=" + waitTimeOut + " sessionId:0x"
-                        + Long.toHexString(sessionId));
+        @Override
+        public ChannelPipeline getPipeline() throws Exception {
+            ChannelPipeline pipeline = Channels.pipeline();
+            if (clientConfig.getBoolean(ZKClientConfig.SECURE_CLIENT)) {
+                initSSL(pipeline);
             }
-            try {
-                synchronized (outgoingQueue) {
-                    outgoingQueue.wait(waitTimeOut);
-                }
-            } catch (InterruptedException e) {
-                LOG.trace("WOKE via interrupt sessionId:0x"
-                        + Long.toHexString(sessionId));
-            } finally {
-                if (LOG.isTraceEnabled()) {
-                    LOG.trace("WOKE sessionId:0x" + Long.toHexString(sessionId));
-                }
-            }
-
+            pipeline.addLast("handler", new ZKClientHandler());
+            return pipeline;
         }
-        // Everything below and until we get back to the wait is
-        // non blocking, so time is effectively a constant. That is
-        // Why we just have to do this once, here
-        updateNow();
+
+        // The synchronized is to prevent the race on shared variable "sslEngine".
+        // Basically we only need to create it once.
+        private synchronized void initSSL(ChannelPipeline pipeline) throws SSLContextException {
+            if (sslContext == null || sslEngine == null) {
+                sslContext = X509Util.createSSLContext(clientConfig);
+                sslEngine = sslContext.createSSLEngine();
+                sslEngine.setUseClientMode(true);
+            }
+            pipeline.addLast("ssl", new SslHandler(sslEngine));
+            LOG.info("SSL handler added for channel: {}", pipeline.getChannel());
+        }
     }
 
-    private class ZKClientHandler extends SimpleChannelHandler {
+    /**
+     * ZKClientHandler is the netty handler that sits in netty upstream last
+     * place. It mainly handles read traffic and helps synchronize connection state.
+     */
+    private class ZKClientHandler extends SimpleChannelUpstreamHandler {
+        AtomicBoolean channelClosed = new AtomicBoolean(false);
 
         @Override
         public void channelDisconnected(ChannelHandlerContext ctx,
-                ChannelStateEvent e) throws Exception {
-            disconnected = true;
-            wakeupCnxn();
+                                        ChannelStateEvent e) throws Exception {
+            LOG.info("channel is disconnected: {}", ctx.getChannel());
+            cleanup();
         }
 
-        @Override
-        public void channelConnected(ChannelHandlerContext ctx,
-                ChannelStateEvent e) throws Exception {
-            if (LOG.isTraceEnabled()) {
-                LOG.trace("Channel connected " + e);
+        /**
+         * netty handler has encountered problems. We are cleaning it up and tell outside to close
+         * the channel/connection.
+         */
+        private void cleanup() {
+            if (!channelClosed.compareAndSet(false, true)) {
+                return;
             }
-            channel = ctx.getChannel();
-
-            long now = System.currentTimeMillis();
-
-            lastHeard = now;
-            lastSend = now;
-
-            sendThread.primeConnection();
-
-            initialized = false;
-
-            /*
-             * Reset incomingBuffer
-             */
-            lenBuffer.clear();
-            incomingBuffer = lenBuffer;
-
-            wakeupCnxn();
+            disconnected.set(true);
+            onClosing();
         }
 
         @Override
-        public void messageReceived(ChannelHandlerContext ctx, MessageEvent e)
-                throws IOException {
-            lastHeard = System.currentTimeMillis();
-
+        public void messageReceived(ChannelHandlerContext ctx,
+                                    MessageEvent e) throws Exception {
+            updateNow();
             ChannelBuffer buf = (ChannelBuffer) e.getMessage();
             while (buf.readable()) {
                 if (incomingBuffer.remaining() > buf.readableBytes()) {
@@ -270,30 +421,23 @@ public class ClientCnxnSocketNetty extends ClientCnxnSocket {
                         lenBuffer.clear();
                         incomingBuffer = lenBuffer;
                         initialized = true;
+                        updateLastHeard();
                     } else {
-                        synchronized (outgoingQueue) {
-                            sendThread.readResponse(incomingBuffer);                            
-                        }
-
+                        sendThread.readResponse(incomingBuffer);
                         lenBuffer.clear();
                         incomingBuffer = lenBuffer;
+                        updateLastHeard();
                     }
                 }
             }
+            wakeupCnxn();
         }
 
         @Override
-        public void channelInterestChanged(ChannelHandlerContext ctx,
-                ChannelStateEvent e) {
-            if (e.getState() == ChannelState.INTEREST_OPS) {
-                // handle the case where OP_WRITE changes
-                wakeupCnxn();
-            }
-        }
-
-        @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, ExceptionEvent e) {
-            LOG.warn("Exception caught " + e, e.getCause());
+        public void exceptionCaught(ChannelHandlerContext ctx,
+                                    ExceptionEvent e) throws Exception {
+            LOG.warn("Exception caught: {}", e, e.getCause());
+            cleanup();
         }
     }
 }

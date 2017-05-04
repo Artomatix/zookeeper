@@ -37,7 +37,8 @@ import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.InputArchive;
 import org.apache.jute.OutputArchive;
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.server.DataTree;
 import org.apache.zookeeper.server.util.SerializeUtils;
 
@@ -52,7 +53,7 @@ public class FileSnap implements SnapShot {
     private volatile boolean close = false;
     private static final int VERSION=2;
     private static final long dbId=-1;
-    private static final Logger LOG = Logger.getLogger(FileSnap.class);
+    private static final Logger LOG = LoggerFactory.getLogger(FileSnap.class);
     public final static int SNAP_MAGIC
         = ByteBuffer.wrap("ZKSN".getBytes()).getInt();
     public FileSnap(File snapDir) {
@@ -176,19 +177,21 @@ public class FileSnap implements SnapShot {
     /**
      * find the last n snapshots. this does not have
      * any checks if the snapshot might be valid or not
-     * @param the number of most recent snapshots 
+     * @param the number of most recent snapshots
      * @return the last n snapshots
      * @throws IOException
      */
     public List<File> findNRecentSnapshots(int n) throws IOException {
         List<File> files = Util.sortDataDir(snapDir.listFiles(), "snapshot", false);
-        int i = 0;
+        int count = 0;
         List<File> list = new ArrayList<File>();
         for (File f: files) {
-            if (i==n)
+            if (count == n)
                 break;
-            i++;
-            list.add(f);
+            if (Util.getZxidFromName(f.getName(), "snapshot") != -1) {
+                count++;
+                list.add(f);
+            }
         }
         return list;
     }

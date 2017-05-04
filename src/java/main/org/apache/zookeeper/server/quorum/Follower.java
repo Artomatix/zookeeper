@@ -18,15 +18,19 @@
 
 package org.apache.zookeeper.server.quorum;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.net.InetSocketAddress;
+import java.nio.ByteBuffer;
 
-import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.Record;
+import org.apache.zookeeper.ZooDefs.OpCode;
+import org.apache.zookeeper.common.Time;
+import org.apache.zookeeper.server.Request;
+import org.apache.zookeeper.server.quorum.flexible.QuorumVerifier;
 import org.apache.zookeeper.server.util.SerializeUtils;
+import org.apache.zookeeper.server.util.ZxidUtils;
+import org.apache.zookeeper.txn.SetDataTxn;
 import org.apache.zookeeper.txn.TxnHeader;
-
 /**
  * This class has the control logic for the Follower.
  */
@@ -58,27 +62,36 @@ public class Follower extends Learner{
      * @throws InterruptedException
      */
     void followLeader() throws InterruptedException {
+        self.end_fle = Time.currentElapsedTime();
+        long electionTimeTaken = self.end_fle - self.start_fle;
+        self.setElectionTimeTaken(electionTimeTaken);
+        LOG.info("FOLLOWING - LEADER ELECTION TOOK - {} {}", electionTimeTaken,
+                QuorumPeer.FLE_TIME_UNIT);
+        self.start_fle = 0;
+        self.end_fle = 0;
         fzk.registerJMX(new FollowerBean(this, zk), self.jmxLocalPeerBean);
         try {
-            InetSocketAddress addr = findLeader();
+            InetSocketAddress addr = findLeader();            
             try {
                 connectToLeader(addr);
-                long newLeaderZxid = registerWithLeader(Leader.FOLLOWERINFO);
+                long newEpochZxid = registerWithLeader(Leader.FOLLOWERINFO);
+                if (self.isReconfigStateChange())
+                   throw new Exception("learned about role change");
                 //check to see if the leader zxid is lower than ours
                 //this should never happen but is just a safety check
-                long lastLoggedZxid = self.getLastLoggedZxid();
-                if ((newLeaderZxid >> 32L) < (lastLoggedZxid >> 32L)) {
-                    LOG.fatal("Leader epoch " + Long.toHexString(newLeaderZxid >> 32L)
-                            + " is less than our epoch " + Long.toHexString(lastLoggedZxid >> 32L));
+                long newEpoch = ZxidUtils.getEpochFromZxid(newEpochZxid);
+                if (newEpoch < self.getAcceptedEpoch()) {
+                    LOG.error("Proposed leader epoch " + ZxidUtils.zxidToString(newEpochZxid)
+                            + " is less than our accepted epoch " + ZxidUtils.zxidToString(self.getAcceptedEpoch()));
                     throw new IOException("Error: Epoch of leader is lower");
                 }
-                syncWithLeader(newLeaderZxid);                
+                syncWithLeader(newEpochZxid);                
                 QuorumPacket qp = new QuorumPacket();
-                while (self.isRunning()) {
+                while (this.isRunning()) {
                     readPacket(qp);
                     processPacket(qp);
                 }
-            } catch (IOException e) {
+            } catch (Exception e) {
                 LOG.warn("Exception when following the leader", e);
                 try {
                     sock.close();
@@ -86,11 +99,8 @@ public class Follower extends Learner{
                     e1.printStackTrace();
                 }
     
-                synchronized (pendingRevalidations) {
-                    // clear pending revalidations
-                    pendingRevalidations.clear();
-                    pendingRevalidations.notifyAll();
-                }
+                // clear pending revalidations
+                pendingRevalidations.clear();
             }
         } finally {
             zk.unregisterJMX((Learner)this);
@@ -102,16 +112,14 @@ public class Follower extends Learner{
      * @param qp
      * @throws IOException
      */
-    protected void processPacket(QuorumPacket qp) throws IOException{
+    protected void processPacket(QuorumPacket qp) throws Exception{
         switch (qp.getType()) {
         case Leader.PING:            
             ping(qp);            
             break;
-        case Leader.PROPOSAL:            
+        case Leader.PROPOSAL:           
             TxnHeader hdr = new TxnHeader();
-            BinaryInputArchive ia = BinaryInputArchive
-            .getArchive(new ByteArrayInputStream(qp.getData()));
-            Record txn = SerializeUtils.deserializeTxn(ia, hdr);
+            Record txn = SerializeUtils.deserializeTxn(qp.getData(), hdr);
             if (hdr.getZxid() != lastQueued + 1) {
                 LOG.warn("Got zxid 0x"
                         + Long.toHexString(hdr.getZxid())
@@ -119,20 +127,47 @@ public class Follower extends Learner{
                         + Long.toHexString(lastQueued + 1));
             }
             lastQueued = hdr.getZxid();
+            
+            if (hdr.getType() == OpCode.reconfig){
+               SetDataTxn setDataTxn = (SetDataTxn) txn;       
+               QuorumVerifier qv = self.configFromString(new String(setDataTxn.getData()));
+               self.setLastSeenQuorumVerifier(qv, true);                               
+            }
+            
             fzk.logRequest(hdr, txn);
             break;
         case Leader.COMMIT:
             fzk.commit(qp.getZxid());
             break;
+            
+        case Leader.COMMITANDACTIVATE:
+           // get the new configuration from the request
+           Request request = fzk.pendingTxns.element();
+           SetDataTxn setDataTxn = (SetDataTxn) request.getTxn();                                                                                                      
+           QuorumVerifier qv = self.configFromString(new String(setDataTxn.getData()));                                
+ 
+           // get new designated leader from (current) leader's message
+           ByteBuffer buffer = ByteBuffer.wrap(qp.getData());    
+           long suggestedLeaderId = buffer.getLong();
+            boolean majorChange = 
+                   self.processReconfig(qv, suggestedLeaderId, qp.getZxid(), true);
+           // commit (writes the new config to ZK tree (/zookeeper/config)                     
+           fzk.commit(qp.getZxid());
+            if (majorChange) {
+               throw new Exception("changes proposed in reconfig");
+           }
+           break;
         case Leader.UPTODATE:
-            fzk.takeSnapshot();
-            self.cnxnFactory.setZooKeeperServer(fzk);
+            LOG.error("Received an UPTODATE message after Follower started");
             break;
         case Leader.REVALIDATE:
             revalidate(qp);
             break;
         case Leader.SYNC:
             fzk.sync();
+            break;
+        default:
+            LOG.warn("Unknown packet type: {}", LearnerHandler.packetToString(qp));
             break;
         }
     }

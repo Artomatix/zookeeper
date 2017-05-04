@@ -18,18 +18,15 @@
 
 package org.apache.zookeeper.test;
 
+import static org.junit.Assert.fail;
+
 import java.io.IOException;
-import java.lang.management.ManagementFactory;
-import java.lang.management.OperatingSystemMXBean;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Level;
 
-import org.apache.log4j.Logger;
-import org.apache.log4j.Priority;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.KeeperException.Code;
@@ -44,14 +41,21 @@ import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.ACL;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.data.Stat;
+import org.apache.zookeeper.proto.ExistsRequest;
+import org.apache.zookeeper.proto.ExistsResponse;
+import org.apache.zookeeper.proto.ReplyHeader;
+import org.apache.zookeeper.proto.RequestHeader;
 import org.apache.zookeeper.server.PrepRequestProcessor;
+import org.apache.zookeeper.server.util.OSMXBean;
+import static org.apache.zookeeper.test.ClientBase.CONNECTION_TIMEOUT;
 import org.junit.Assert;
 import org.junit.Test;
-
-import com.sun.management.UnixOperatingSystemMXBean;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ClientTest extends ClientBase {
-    protected static final Logger LOG = Logger.getLogger(ClientTest.class);
+    protected static final Logger LOG = LoggerFactory.getLogger(ClientTest.class);
+    private boolean skipACL = System.getProperty("zookeeper.skipACL", "no").equals("yes");
 
     /** Verify that pings are sent, keeping the "idle" client alive */
     @Test
@@ -106,15 +110,14 @@ public class ClientTest extends ClientBase {
     public void testTestability() throws Exception {
         TestableZooKeeper zk = createClient();
         try {
-            LOG.info(zk.testableLocalSocketAddress());
-            LOG.info(zk.testableRemoteSocketAddress());
-            LOG.info(zk.toString());
+            LOG.info("{}",zk.testableLocalSocketAddress());
+            LOG.info("{}",zk.testableRemoteSocketAddress());
+            LOG.info("{}",zk.toString());
         } finally {
-            zk.close();
-            zk.testableWaitForShutdown(CONNECTION_TIMEOUT);
-            LOG.info(zk.testableLocalSocketAddress());
-            LOG.info(zk.testableRemoteSocketAddress());
-            LOG.info(zk.toString());
+            zk.close(CONNECTION_TIMEOUT);
+            LOG.info("{}",zk.testableLocalSocketAddress());
+            LOG.info("{}",zk.testableRemoteSocketAddress());
+            LOG.info("{}",zk.toString());
         }
     }
 
@@ -140,27 +143,95 @@ public class ClientTest extends ClientBase {
                 LOG.info("Test successful, invalid acl received : "
                         + e.getMessage());
             }
+            try {
+                ArrayList<ACL> testACL = new ArrayList<ACL>();
+                testACL.add(new ACL(Perms.ALL | Perms.ADMIN, new Id()));
+                zk.create("/nullidtest", new byte[0], testACL, CreateMode.PERSISTENT);
+                Assert.fail("Should have received an invalid acl error");
+            } catch(InvalidACLException e) {
+                LOG.info("Test successful, invalid acl received : "
+                        + e.getMessage());
+            }
             zk.addAuthInfo("digest", "ben:passwd".getBytes());
-            zk.create("/acltest", new byte[0], Ids.CREATOR_ALL_ACL, CreateMode.PERSISTENT);
+            ArrayList<ACL> testACL = new ArrayList<ACL>();
+            testACL.add(new ACL(Perms.ALL, new Id("auth","")));
+            testACL.add(new ACL(Perms.WRITE, new Id("ip", "127.0.0.1")));
+            zk.create("/acltest", new byte[0], testACL, CreateMode.PERSISTENT);
             zk.close();
             zk = createClient();
             zk.addAuthInfo("digest", "ben:passwd2".getBytes());
-            try {
-                zk.getData("/acltest", false, new Stat());
-                Assert.fail("Should have received a permission error");
-            } catch (KeeperException e) {
-                Assert.assertEquals(Code.NOAUTH, e.code());
+            if (skipACL) {
+                try {
+                    zk.getData("/acltest", false, null);
+                } catch (KeeperException e) {
+                    Assert.fail("Badauth reads should succeed with skipACL.");
+                }
+            } else {
+                try {
+                    zk.getData("/acltest", false, null);
+                    Assert.fail("Should have received a permission error");
+                } catch (KeeperException e) {
+                    Assert.assertEquals(Code.NOAUTH, e.code());
+                }
             }
             zk.addAuthInfo("digest", "ben:passwd".getBytes());
-            zk.getData("/acltest", false, new Stat());
+            zk.getData("/acltest", false, null);
             zk.setACL("/acltest", Ids.OPEN_ACL_UNSAFE, -1);
             zk.close();
             zk = createClient();
-            zk.getData("/acltest", false, new Stat());
+            zk.getData("/acltest", false, null);
             List<ACL> acls = zk.getACL("/acltest", new Stat());
             Assert.assertEquals(1, acls.size());
             Assert.assertEquals(Ids.OPEN_ACL_UNSAFE, acls);
+
+            // The stat parameter should be optional.
+            acls = zk.getACL("/acltest", null);
+            Assert.assertEquals(1, acls.size());
+            Assert.assertEquals(Ids.OPEN_ACL_UNSAFE, acls);
+
             zk.close();
+        } finally {
+            if (zk != null) {
+                zk.close();
+            }
+        }
+    }
+
+    @Test
+    public void testNullAuthId() throws Exception {
+        ZooKeeper zk = null;
+        try {
+            zk = createClient();
+            zk.addAuthInfo("digest", "ben:passwd".getBytes());
+            ArrayList<ACL> testACL = new ArrayList<ACL>();
+            testACL.add(new ACL(Perms.ALL, new Id("auth", null)));
+            zk.create("/acltest", new byte[0], testACL, CreateMode.PERSISTENT);
+            zk.close();
+            zk = createClient();
+            zk.addAuthInfo("digest", "ben:passwd2".getBytes());
+            if (skipACL) {
+                try {
+                    zk.getData("/acltest", false, null);
+                } catch (KeeperException e) {
+                    Assert.fail("Badauth reads should succeed with skipACL.");
+                }
+            } else {
+                try {
+                    zk.getData("/acltest", false, null);
+                    Assert.fail("Should have received a permission error");
+                } catch (KeeperException e) {
+                    Assert.assertEquals(Code.NOAUTH, e.code());
+                }
+            }
+            zk.addAuthInfo("digest", "ben:passwd".getBytes());
+            zk.getData("/acltest", false, null);
+            zk.setACL("/acltest", Ids.OPEN_ACL_UNSAFE, -1);
+            zk.close();
+            zk = createClient();
+            zk.getData("/acltest", false, null);
+            List<ACL> acls = zk.getACL("/acltest", new Stat());
+            Assert.assertEquals(1, acls.size());
+            Assert.assertEquals(Ids.OPEN_ACL_UNSAFE, acls);
         } finally {
             if (zk != null) {
                 zk.close();
@@ -523,6 +594,22 @@ public class ClientTest extends ClientBase {
 
     }
 
+    @Test
+    public void testLargeNodeData() throws Exception {
+        ZooKeeper zk= null;
+        String queue_handle = "/large";
+        try {
+            zk = createClient();
+
+            zk.create(queue_handle, new byte[500000], Ids.OPEN_ACL_UNSAFE,
+                    CreateMode.PERSISTENT);
+        } finally {
+            if (zk != null) {
+                zk.close();
+            }
+        }
+
+    }
 
     private void verifyCreateFails(String path, ZooKeeper zk) throws Exception {
         try {
@@ -672,11 +759,10 @@ public class ClientTest extends ClientBase {
             try {
                 for (; current < count; current++) {
                     TestableZooKeeper zk = createClient();
-                    zk.close();
                     // we've asked to close, wait for it to finish closing
                     // all the sub-threads otw the selector may not be
                     // closed when we check (false positive on test Assert.failure
-                    zk.testableWaitForShutdown(CONNECTION_TIMEOUT);
+                    zk.close(CONNECTION_TIMEOUT);
                 }
             } catch (Throwable t) {
                 LOG.error("test Assert.failed", t);
@@ -693,11 +779,8 @@ public class ClientTest extends ClientBase {
      */
     @Test
     public void testClientCleanup() throws Throwable {
-        OperatingSystemMXBean osMbean =
-            ManagementFactory.getOperatingSystemMXBean();
-        if (osMbean == null 
-                || !(osMbean instanceof UnixOperatingSystemMXBean))
-        {
+        OSMXBean osMbean = new OSMXBean();
+        if (osMbean.getUnix() == false) {
             LOG.warn("skipping testClientCleanup, only available on Unix");
             return;
         }
@@ -710,9 +793,7 @@ public class ClientTest extends ClientBase {
          * on unix systems (the only place sun has implemented as part of the
          * mgmt bean api).
          */
-        UnixOperatingSystemMXBean unixos =
-            (UnixOperatingSystemMXBean) osMbean;
-        long initialFdCount = unixos.getOpenFileDescriptorCount();
+        long initialFdCount = osMbean.getOpenFileDescriptorCount();
 
         VerifyClientCleanup threads[] = new VerifyClientCleanup[threadCount];
 
@@ -730,15 +811,49 @@ public class ClientTest extends ClientBase {
         LOG.info("initial:" + initialFdCount + " currentlyOpen:" + currentlyOpen);
         // if this Assert.fails it means we are not cleaning up after the closed
         // sessions.
-        long currentCount = unixos.getOpenFileDescriptorCount();
-        int priority = Priority.INFO_INT;
-        if (currentCount <= initialFdCount + 10) {
-            priority = Priority.INFO_INT;
+        long currentCount = osMbean.getOpenFileDescriptorCount();
+        final String logmsg = "open fds after test ({}) are not significantly higher than before ({})";
+        
+        if (currentCount > initialFdCount + 10) {
+            // consider as error
+        	LOG.error(logmsg,Long.valueOf(currentCount),Long.valueOf(initialFdCount));
         } else {
-            priority= Priority.ERROR_INT;
+        	LOG.info(logmsg,Long.valueOf(currentCount),Long.valueOf(initialFdCount));
         }
-        LOG.log(Priority.toPriority(priority), "open fds after test (" + currentCount 
-                + ") are not significantly higher than before ("
-                + initialFdCount + ")");
+    }
+
+
+    /**
+     * We create a perfectly valid 'exists' request, except that the opcode is wrong.
+     * @return
+     * @throws Exception
+     */
+    @Test
+    public void testNonExistingOpCode() throws Exception  {
+        TestableZooKeeper zk = createClient();
+
+        final String path = "/m1";
+
+        RequestHeader h = new RequestHeader();
+        h.setType(888);  // This code does not exists
+        ExistsRequest request = new ExistsRequest();
+        request.setPath(path);
+        request.setWatch(false);
+        ExistsResponse response = new ExistsResponse();
+        ReplyHeader r = zk.submitRequest(h, request, response, null);
+
+        Assert.assertEquals(r.getErr(), Code.UNIMPLEMENTED.intValue());
+        zk.testableWaitForShutdown(CONNECTION_TIMEOUT);
+    }
+
+    @Test
+    public void testTryWithResources() throws Exception {
+        ZooKeeper zooKeeper;
+        try (ZooKeeper zk = createClient()) {
+            zooKeeper = zk;
+            Assert.assertTrue(zooKeeper.getState().isAlive());
+        }
+
+        Assert.assertFalse(zooKeeper.getState().isAlive());
     }
 }

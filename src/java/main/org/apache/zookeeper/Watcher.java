@@ -20,7 +20,7 @@ package org.apache.zookeeper;
 
 /**
  * This interface specifies the public interface an event handler class must
- * implement. A ZooKeeper client will get various events from the ZooKeepr
+ * implement. A ZooKeeper client will get various events from the ZooKeeper
  * server it connects to. An application using such a client handles these
  * events by registering a callback object with the client. The callback object
  * is expected to be an instance of a class that implements Watcher interface.
@@ -54,17 +54,32 @@ public interface Watcher {
              * creation). */
             SyncConnected (3),
 
+            /**
+             * Auth failed state
+             */
+            AuthFailed (4),
+
+            /**
+             * The client is connected to a read-only server, that is the
+             * server which is not currently connected to the majority.
+             * The only operations allowed after receiving this state is
+             * read operations.
+             * This state is generated for read-only clients only since
+             * read/write clients aren't allowed to connect to r/o servers.
+             */
+            ConnectedReadOnly (5),
+
+            /**
+              * SaslAuthenticated: used to notify clients that they are SASL-authenticated,
+              * so that they can perform Zookeeper actions with their SASL-authorized permissions.
+              */
+            SaslAuthenticated(6),
+
             /** The serving cluster has expired this session. The ZooKeeper
              * client connection (the session) is no longer valid. You must
              * create a new client connection (instantiate a new ZooKeeper
              * instance) if you with to access the ensemble. */
-            Expired (-112),
-
-            /**
-             * Auth failed state
-             * 
-             */
-            AuthFailed(4);
+            Expired (-112);
 
             private final int intValue;     // Integer representation of value
                                             // for sending over wire
@@ -84,6 +99,8 @@ public interface Watcher {
                     case    1: return KeeperState.NoSyncConnected;
                     case    3: return KeeperState.SyncConnected;
                     case    4: return KeeperState.AuthFailed;
+                    case    5: return KeeperState.ConnectedReadOnly;
+                    case    6: return KeeperState.SaslAuthenticated;
                     case -112: return KeeperState.Expired;
 
                     default:
@@ -100,7 +117,9 @@ public interface Watcher {
             NodeCreated (1),
             NodeDeleted (2),
             NodeDataChanged (3),
-            NodeChildrenChanged (4);
+            NodeChildrenChanged (4),
+            DataWatchRemoved (5),
+            ChildWatchRemoved (6);
 
             private final int intValue;     // Integer representation of value
                                             // for sending over wire
@@ -120,11 +139,46 @@ public interface Watcher {
                     case  2: return EventType.NodeDeleted;
                     case  3: return EventType.NodeDataChanged;
                     case  4: return EventType.NodeChildrenChanged;
+                    case  5: return EventType.DataWatchRemoved;
+                    case  6: return EventType.ChildWatchRemoved;
 
                     default:
                         throw new RuntimeException("Invalid integer value for conversion to EventType");
                 }
             }           
+        }
+    }
+
+    /**
+     * Enumeration of types of watchers
+     */
+    public enum WatcherType {
+        Children(1), Data(2), Any(3);
+
+        // Integer representation of value
+        private final int intValue;
+
+        private WatcherType(int intValue) {
+            this.intValue = intValue;
+        }
+
+        public int getIntValue() {
+            return intValue;
+        }
+
+        public static WatcherType fromInt(int intValue) {
+            switch (intValue) {
+            case 1:
+                return WatcherType.Children;
+            case 2:
+                return WatcherType.Data;
+            case 3:
+                return WatcherType.Any;
+
+            default:
+                throw new RuntimeException(
+                        "Invalid integer value for conversion to WatcherType");
+            }
         }
     }
 

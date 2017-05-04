@@ -39,11 +39,11 @@
   <property name="javac.deprecation" value="on"/>
   <property name="javac.debug" value="on"/>
 
-  <property name="build.encoding" value="ISO-8859-1"/>
+  <property name="build.encoding" value="utf8"/>
 
-  <property name="ivy.version" value="2.1.0"/>
+  <property name="ivy.version" value="2.4.0"/>
   <property name="ivy.url"
-            value="http://repo2.maven.org/maven2/org/apache/ivy/ivy" />
+            value="https://repo1.maven.org/maven2/org/apache/ivy/ivy" />
   <property name="ivy.home" value="${user.home}/.ant" />
   <property name="ivy.lib" value="${build.dir}/lib"/>
   <property name="ivy.test.lib" value="${build.test}/lib"/>
@@ -144,13 +144,20 @@
   <target name="package" depends="jar" unless="skip.contrib"> 
     <echo message="contrib: ${name}"/>
 
-    <mkdir dir="${dist.dir}/contrib/${name}"/>
-    <copy todir="${dist.dir}/contrib/${name}" includeEmptyDirs="false"
+    <mkdir dir="${dist.dir}${package.share}/contrib/${name}"/>
+    <copy todir="${dist.dir}${package.share}/contrib/${name}" includeEmptyDirs="false"
           flatten="true">
       <fileset dir="${build.dir}">
         <include name="zookeeper-${version}-${name}.jar" />
       </fileset>
     </copy>
+  </target>
+
+  <!-- ====================================================== -->
+  <!-- Package a contrib's files                              -->
+  <!-- ====================================================== -->
+  <target name="package-native" depends="jar" unless="skip.contrib">
+    <echo message="contrib: ${name}"/>
   </target>
 
   <!-- ================================================================== -->

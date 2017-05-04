@@ -25,7 +25,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map.Entry;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.AsyncCallback;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
@@ -37,6 +38,7 @@ import org.apache.zookeeper.KeeperException.NoNodeException;
 import org.apache.zookeeper.KeeperException.NodeExistsException;
 import org.apache.zookeeper.ZooDefs.Ids;
 import org.apache.zookeeper.data.Stat;
+import org.apache.zookeeper.common.Time;
 
 /**
  * This class doles out assignments to InstanceContainers that are registered to
@@ -51,7 +53,7 @@ import org.apache.zookeeper.data.Stat;
  *               running. it will have the report string from the instance.
  */
 public class InstanceManager implements AsyncCallback.ChildrenCallback, Watcher {
-    final private static Logger LOG = Logger.getLogger(InstanceManager.class);
+    final private static Logger LOG = LoggerFactory.getLogger(InstanceManager.class);
     private ZooKeeper zk;
     private String prefixNode;
     private String reportsNode = "reports";
@@ -61,11 +63,9 @@ public class InstanceManager implements AsyncCallback.ChildrenCallback, Watcher 
     private static final int maxTries = 3;
     private static final class Assigned {
         String container;
-        String instance;
         int weight;
-        Assigned(String container, String instance, int weight) {
+        Assigned(String container, int weight) {
             this.container = container;
-            this.instance = instance;
             this.weight = weight;
         }
     }
@@ -158,16 +158,6 @@ public class InstanceManager implements AsyncCallback.ChildrenCallback, Watcher 
         }
         assignments = newAssignments;
     }
-    private void removeAssignmentNode(String dead) throws KeeperException, InterruptedException {
-        String deadNode = assignmentsNode + '/' + dead;
-        List<String> children = zk.getChildren(deadNode, false);
-        for(String c: children) {
-            zk.delete(deadNode + '/' + c, -1);
-        }
-        try {
-            zk.delete(deadNode, -1);
-        } catch(NoNodeException e) { /* this is ok */ }
-    }
     
     public void process(WatchedEvent event) {
         if (event.getPath().equals(statusNode)) {
@@ -212,7 +202,7 @@ public class InstanceManager implements AsyncCallback.ChildrenCallback, Watcher 
         if (mostIdle == null) {
             throw new NoAvailableContainers("No available containers");
         }
-        Assigned a = new Assigned(mostIdle, name, weight);
+        Assigned a = new Assigned(mostIdle, weight);
         instanceToAssignment.put(name, a);
         HashSet<Assigned> as = assignments.get(mostIdle);
         if (as == null) {
@@ -305,9 +295,9 @@ public class InstanceManager implements AsyncCallback.ChildrenCallback, Watcher 
     public String getStatus(String name, long timeout) throws KeeperException, InterruptedException {
         Stat stat = new Stat();
         byte data[] = null;
-        long endTime = System.currentTimeMillis() + timeout;
+        long endTime = Time.currentElapsedTime() + timeout;
         KeeperException lastException = null;
-        for(int i = 0; i < maxTries && endTime > System.currentTimeMillis(); i++) {
+        for(int i = 0; i < maxTries && endTime > Time.currentElapsedTime(); i++) {
             try {
                 data = zk.getData(reportsNode + '/' + name, false, stat);
                 if (LOG.isDebugEnabled()) {
@@ -328,7 +318,7 @@ public class InstanceManager implements AsyncCallback.ChildrenCallback, Watcher 
                             }
                         }});
                     if (eStat == null) {
-                        eventObj.wait(endTime - System.currentTimeMillis());
+                        eventObj.wait(endTime - Time.currentElapsedTime());
                     }
                 }
                 lastException = e;

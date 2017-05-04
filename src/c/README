@@ -4,9 +4,9 @@
 This package provides a C client interface to Zookeeper server.
 
 For the latest information about ZooKeeper, please visit our website at:
-   http://hadoop.apache.org/zookeeper/
+   http://zookeeper.apache.org/
 and our wiki, at:
-   http://wiki.apache.org/hadoop/ZooKeeper
+   https://cwiki.apache.org/confluence/display/ZOOKEEPER
 
 Full documentation for this release can also be found in ../../docs/index.html
 
@@ -43,7 +43,12 @@ tar downloaded from Apache please skip to step 2.
 2) unzip/untar the source tarball and cd to the zookeeper-x.x.x/src/c directory
 3) change directory to src/c and do a "autoreconf -if" to bootstrap
    autoconf, automake and libtool. Please make sure you have autoconf
-   version 2.59 or greater installed.
+   version 2.59 or greater installed. If cppunit is installed in a non-standard
+   directory, you need to specify where to find cppunit.m4. For example, if
+   cppunit is installed under /usr/local, run:
+   
+       ACLOCAL="aclocal -I /usr/local/share/aclocal" autoreconf -if
+
 4) do a "./configure [OPTIONS]" to generate the makefile. See INSTALL
    for general information about running configure. Additionally, the
    configure supports the following options:
@@ -59,7 +64,7 @@ tar downloaded from Apache please skip to step 2.
    Alternatively, you can also build and run a unit test suite (and
    you probably should).  Please make sure you have cppunit-1.10.x or
    higher installed before you execute step 4.  Once ./configure has
-   finished, do a "make run-check". It will build the libraries, build
+   finished, do a "make check". It will build the libraries, build
    the tests and run them.
 6) to generate doxygen documentation do a "make doxygen-doc". All
    documentations will be placed to a new subfolder named docs. By
@@ -67,7 +72,12 @@ tar downloaded from Apache please skip to step 2.
    other document formats please use "./configure --help"
 
 
-USING THE CLIENT
+EXAMPLE/SAMPLE C CLIENT SHELL
+
+NOTE: the ZooKeeper C client shell (cli_st and cli_mt) is meant as a
+example/sample of ZooKeeper C client API usage. It is not a full
+fledged client and not meant for production usage - see the Java
+client shell for a fully featured shell.
 
 You can test your client by running a zookeeper server (see
 instructions on the project wiki page on how to run it) and connecting
@@ -79,6 +89,10 @@ this example, but you could also use cli_st (singlethreaded, built
 against zookeeper_st library):
 
 $ cli_mt zookeeper_host:9876
+
+To start a client with read-only mode enabled, use the -r flag:
+
+$ cli_mt -r zookeeper_host:9876
 
 This is a client application that gives you a shell for executing
 simple zookeeper commands. Once successfully started and connected to

@@ -22,7 +22,9 @@ import java.io.IOException;
 import java.util.Date;
 import java.util.List;
 
-import org.apache.log4j.Logger;
+import org.apache.zookeeper.common.Time;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
@@ -31,7 +33,7 @@ import org.junit.Assert;
 import org.junit.Test;
 
 public class ClientHammerTest extends ClientBase {
-    protected static final Logger LOG = Logger.getLogger(ClientHammerTest.class);
+    protected static final Logger LOG = LoggerFactory.getLogger(ClientHammerTest.class);
 
     private static final long HAMMERTHREAD_LATENCY = 5;
 
@@ -123,7 +125,7 @@ public class ClientHammerTest extends ClientBase {
     {
         try {
             HammerThread[] threads = new HammerThread[threadCount];
-            long start = System.currentTimeMillis();
+            long start = Time.currentElapsedTime();
             for (int i = 0; i < threads.length; i++) {
                 ZooKeeper zk = createClient();
                 String prefix = "/test-" + i;
@@ -156,7 +158,7 @@ public class ClientHammerTest extends ClientBase {
             final int childCount = 10;
 
             HammerThread[] threads = new HammerThread[threadCount];
-            long start = System.currentTimeMillis();
+            long start = Time.currentElapsedTime();
             for (int i = 0; i < threads.length; i++) {
                 String prefix = "/test-" + i;
                 {
@@ -213,12 +215,12 @@ public class ClientHammerTest extends ClientBase {
         for (int i=0;i<threads.length;++i) {
             HammerThread h = threads[i];
             final int safetyFactor = 3;
-            verifyThreadTerminated(h, i,
-                    threads.length * childCount
-                    * HAMMERTHREAD_LATENCY * safetyFactor);
+            verifyThreadTerminated(h,
+                    (long)threads.length * (long)childCount
+                    * HAMMERTHREAD_LATENCY * (long)safetyFactor);
         }
         LOG.info(new Date() + " Total time "
-                + (System.currentTimeMillis() - start));
+                + (Time.currentElapsedTime() - start));
 
         ZooKeeper zk = createClient();
         try {

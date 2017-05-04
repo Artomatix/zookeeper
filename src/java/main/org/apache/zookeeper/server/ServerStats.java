@@ -19,6 +19,9 @@
 package org.apache.zookeeper.server;
 
 
+
+import org.apache.zookeeper.common.Time;
+
 /**
  * Basic Server Statistics
  */
@@ -36,6 +39,9 @@ public class ServerStats {
         public long getOutstandingRequests();
         public long getLastProcessedZxid();
         public String getState();
+        public int getNumAliveConnections();
+        public long getDataDirSize();
+        public long getLogDirSize();
     }
     
     public ServerStats(Provider provider) {
@@ -65,6 +71,14 @@ public class ServerStats {
     public long getLastProcessedZxid(){
         return provider.getLastProcessedZxid();
     }
+
+    public long getDataDirSize() {
+        return provider.getDataDirSize();
+    }
+
+    public long getLogDirSize() {
+        return provider.getLogDirSize();
+    }
     
     synchronized public long getPacketsReceived() {
         return packetsReceived;
@@ -78,6 +92,15 @@ public class ServerStats {
         return provider.getState();
     }
     
+    /** The number of client connections alive to this server */
+    public int getNumAliveClientConnections() {
+    	return provider.getNumAliveConnections();
+    }
+
+    public boolean isProviderNull() {
+        return provider == null;
+    }
+
     @Override
     public String toString(){
         StringBuilder sb = new StringBuilder();
@@ -85,6 +108,8 @@ public class ServerStats {
                 + getAvgLatency() + "/" + getMaxLatency() + "\n");
         sb.append("Received: " + getPacketsReceived() + "\n");
         sb.append("Sent: " + getPacketsSent() + "\n");
+        sb.append("Connections: " + getNumAliveClientConnections() + "\n");
+
         if (provider != null) {
             sb.append("Outstanding: " + getOutstandingRequests() + "\n");
             sb.append("Zxid: 0x"+ Long.toHexString(getLastProcessedZxid())+ "\n");
@@ -94,7 +119,7 @@ public class ServerStats {
     }
     // mutators
     synchronized void updateLatency(long requestCreateTime) {
-        long latency = System.currentTimeMillis() - requestCreateTime;
+        long latency = Time.currentElapsedTime() - requestCreateTime;
         totalLatency += latency;
         count++;
         if (latency < minLatency) {
@@ -123,7 +148,6 @@ public class ServerStats {
         packetsReceived = 0;
         packetsSent = 0;
     }
-    
     synchronized public void reset() {
         resetLatency();
         resetRequestCounters();

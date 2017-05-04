@@ -19,7 +19,7 @@
 package org.apache.zookeeper.test;
 
 import org.apache.zookeeper.ClientCnxnSocketNetty;
-import org.apache.zookeeper.ZooKeeper;
+import org.apache.zookeeper.client.ZKClientConfig;
 import org.apache.zookeeper.server.NettyServerCnxnFactory;
 import org.apache.zookeeper.server.ServerCnxnFactory;
 import org.junit.AfterClass;
@@ -34,15 +34,16 @@ import org.junit.runners.Suite;
 public class NettyNettySuiteBase {
     @BeforeClass
     public static void setUp() {
-        System.setProperty(ZooKeeper.ZOOKEEPER_CLIENT_CNXN_SOCKET,
-                ClientCnxnSocketNetty.class.getName());
         System.setProperty(ServerCnxnFactory.ZOOKEEPER_SERVER_CNXN_FACTORY,
                 NettyServerCnxnFactory.class.getName());
+        System.setProperty(ZKClientConfig.ZOOKEEPER_CLIENT_CNXN_SOCKET,
+                ClientCnxnSocketNetty.class.getName());
+        System.setProperty("zookeeper.admin.enableServer", "false");
     }
 
     @AfterClass
     public static void tearDown() {
-        System.clearProperty(ZooKeeper.ZOOKEEPER_CLIENT_CNXN_SOCKET);
         System.clearProperty(ServerCnxnFactory.ZOOKEEPER_SERVER_CNXN_FACTORY);
+        System.clearProperty(ZKClientConfig.ZOOKEEPER_CLIENT_CNXN_SOCKET);
     }
 }

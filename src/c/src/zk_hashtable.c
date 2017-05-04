@@ -68,8 +68,8 @@ static unsigned int string_hash_djb2(void *str)
 {
     unsigned int hash = 5381;
     int c;
-
-    while ((c = *(const char*)str++))
+    const char* cstr = (const char*)str;
+    while ((c = *cstr++))
         hash = ((hash << 5) + hash) + c; /* hash * 33 + c */
 
     return hash;
@@ -189,8 +189,12 @@ static int do_insert_watcher_object(zk_hashtable *ht, const char *path, watcher_
         res=hashtable_insert(ht->ht,strdup(path),create_watcher_object_list(wo));
         assert(res);
     }else{
-        /* path already exists; check if the watcher already exists */
-        res = add_to_list(&wl, wo, 1);
+        /*
+         * Path already exists; check if the watcher already exists.
+         * Don't clone the watcher since it's allocated on the heap --- avoids
+         * a memory leak and saves a clone operation (calloc + copy).
+         */
+        res = add_to_list(&wl, wo, 0);
     }
     return res;    
 }
@@ -330,4 +334,143 @@ void activateWatcher(zhandle_t *zh, watcher_registration_t* reg, int rc)
                     create_watcher_object(reg->watcher, reg->context));
         }
     }    
+}
+
+/* If watcher is NULL, we return TRUE since we consider it a match */
+static int containsWatcher(zk_hashtable *watchers, const char *path,
+        watcher_fn watcher, void *watcherCtx)
+{
+    watcher_object_list_t *wl;
+    watcher_object_t e;
+
+    if (!watcher)
+        return 1;
+
+    wl = hashtable_search(watchers->ht, (void *)path);
+    if (!wl)
+        return 0;
+
+    e.watcher = watcher;
+    e.context = watcherCtx;
+
+    return search_watcher(&wl, &e) ? 1 : 0;
+}
+
+/**
+ * remove any watcher_object that has a matching (watcher, watcherCtx)
+ */
+static void removeWatcherFromList(watcher_object_list_t *wl, watcher_fn watcher,
+        void *watcherCtx)
+{
+    watcher_object_t *e = NULL;
+
+    if (!wl || (wl && !wl->head))
+        return;
+
+    e = wl->head;
+    while (e){
+        if (e->next &&
+            e->next->watcher == watcher &&
+            e->next->context == watcherCtx) {
+            watcher_object_t *this = e->next;
+            e->next = e->next->next;
+            free(this);
+            break;
+        }
+        e = e->next;
+    }
+
+    if (wl->head &&
+        wl->head->watcher == watcher && wl->head->context == watcherCtx) {
+        watcher_object_t *this = wl->head;
+        wl->head = wl->head->next;
+        free(this);
+    }
+}
+
+static void removeWatcher(zk_hashtable *watchers, const char *path,
+        watcher_fn watcher, void *watcherCtx)
+{
+    watcher_object_list_t *wl = hashtable_search(watchers->ht, (void *)path);
+
+    if (!wl)
+        return;
+
+    if (!watcher) {
+        wl = (watcher_object_list_t *) hashtable_remove(watchers->ht,
+                                                        (void *)path);
+        destroy_watcher_object_list(wl);
+        return;
+    }
+
+    removeWatcherFromList(wl, watcher, watcherCtx);
+
+    if (!wl->head) {
+        wl = (watcher_object_list_t *) hashtable_remove(watchers->ht,
+                                                        (void *)path);
+        destroy_watcher_object_list(wl);
+    }
+}
+
+void deactivateWatcher(zhandle_t *zh, watcher_deregistration_t *dereg, int rc)
+{
+    if (rc != ZOK || !dereg)
+        return;
+
+    removeWatchers(zh, dereg->path, dereg->type, dereg->watcher,
+                   dereg->context);
+}
+
+void removeWatchers(zhandle_t *zh, const char* path, ZooWatcherType type,
+        watcher_fn watcher, void *watcherCtx)
+{
+    switch (type) {
+    case ZWATCHERTYPE_CHILDREN:
+        removeWatcher(zh->active_child_watchers, path, watcher, watcherCtx);
+        break;
+    case ZWATCHERTYPE_DATA:
+        removeWatcher(zh->active_node_watchers, path, watcher, watcherCtx);
+        removeWatcher(zh->active_exist_watchers, path, watcher, watcherCtx);
+        break;
+    case ZWATCHERTYPE_ANY:
+        removeWatcher(zh->active_child_watchers, path, watcher, watcherCtx);
+        removeWatcher(zh->active_node_watchers, path, watcher, watcherCtx);
+        removeWatcher(zh->active_exist_watchers, path, watcher, watcherCtx);
+        break;
+    }
+}
+
+int pathHasWatcher(zhandle_t *zh, const char *path, int wtype,
+        watcher_fn watcher, void *watcherCtx)
+{
+    int watcher_found = 0;
+
+    switch (wtype) {
+    case ZWATCHERTYPE_CHILDREN:
+        watcher_found = containsWatcher(zh->active_child_watchers,
+                                        path, watcher, watcherCtx);
+        break;
+    case ZWATCHERTYPE_DATA:
+        watcher_found = containsWatcher(zh->active_node_watchers, path,
+                                        watcher, watcherCtx);
+        if (!watcher_found) {
+            watcher_found = containsWatcher(zh->active_exist_watchers, path,
+                                            watcher, watcherCtx);
+        }
+        break;
+    case ZWATCHERTYPE_ANY:
+        watcher_found = containsWatcher(zh->active_child_watchers, path,
+                                        watcher, watcherCtx);
+        if (!watcher_found) {
+            watcher_found = containsWatcher(zh->active_node_watchers, path,
+                                            watcher, watcherCtx);
+        }
+        if (!watcher_found) {
+            watcher_found = containsWatcher(zh->active_exist_watchers, path,
+                                            watcher, watcherCtx);
+        }
+        break;
+    }
+
+    return watcher_found;
 }

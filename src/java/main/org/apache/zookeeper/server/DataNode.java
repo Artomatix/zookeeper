@@ -21,6 +21,7 @@ package org.apache.zookeeper.server;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Collections;
 
 import org.apache.jute.InputArchive;
 import org.apache.jute.OutputArchive;
@@ -36,9 +37,6 @@ import org.apache.zookeeper.data.StatPersisted;
  * 
  */
 public class DataNode implements Record {
-    /** the parent of this datanode */
-    DataNode parent;
-
     /** the data for this datanode */
     byte data[];
 
@@ -59,6 +57,8 @@ public class DataNode implements Record {
      */
     private Set<String> children = null;
 
+    private static final Set<String> EMPTY_SET = Collections.emptySet();
+
     /**
      * default constructor for the datanode
      */
@@ -78,8 +78,7 @@ public class DataNode implements Record {
      * @param stat
      *            the stat for this node.
      */
-    public DataNode(DataNode parent, byte data[], Long acl, StatPersisted stat) {
-        this.parent = parent;
+    public DataNode(byte data[], Long acl, StatPersisted stat) {
         this.data = data;
         this.acl = acl;
         this.stat = stat;
@@ -125,28 +124,49 @@ public class DataNode implements Record {
     /**
      * convenience methods to get the children
      * 
-     * @return the children of this datanode
+     * @return the children of this datanode. If the datanode has no children, empty
+     *         set is returned
      */
     public synchronized Set<String> getChildren() {
-        return children;
+        if (children == null) {
+            return EMPTY_SET;
+        }
+
+        return Collections.unmodifiableSet(children);
+    }
+
+    public synchronized long getApproximateDataSize() {
+        if(null==data) return 0;
+        return data.length;
     }
 
     synchronized public void copyStat(Stat to) {
         to.setAversion(stat.getAversion());
         to.setCtime(stat.getCtime());
-        to.setCversion(stat.getCversion());
         to.setCzxid(stat.getCzxid());
         to.setMtime(stat.getMtime());
         to.setMzxid(stat.getMzxid());
         to.setPzxid(stat.getPzxid());
         to.setVersion(stat.getVersion());
-        to.setEphemeralOwner(stat.getEphemeralOwner());
+        to.setEphemeralOwner(getClientEphemeralOwner(stat));
         to.setDataLength(data == null ? 0 : data.length);
-        if (this.children == null) {
-            to.setNumChildren(0);
-        } else {
-            to.setNumChildren(children.size());
+        int numChildren = 0;
+        if (this.children != null) {
+            numChildren = children.size();
         }
+        // when we do the Cversion we need to translate from the count of the creates
+        // to the count of the changes (v3 semantics)
+        // for every create there is a delete except for the children still present
+        to.setCversion(stat.getCversion()*2 - numChildren);
+        to.setNumChildren(numChildren);
+    }
+
+    private static long getClientEphemeralOwner(StatPersisted stat) {
+        EphemeralType ephemeralType = EphemeralType.get(stat.getEphemeralOwner());
+        if (ephemeralType != EphemeralType.NORMAL) {
+            return 0;
+        }
+        return stat.getEphemeralOwner();
     }
 
     synchronized public void deserialize(InputArchive archive, String tag)

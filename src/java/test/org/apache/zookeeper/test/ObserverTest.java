@@ -22,7 +22,8 @@ import static org.apache.zookeeper.test.ClientBase.CONNECTION_TIMEOUT;
 
 import java.util.concurrent.CountDownLatch;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException.ConnectionLossException;
 import org.apache.zookeeper.PortAssignment;
@@ -38,7 +39,7 @@ import org.junit.Test;
 
 public class ObserverTest extends QuorumPeerTestBase implements Watcher{
     protected static final Logger LOG =
-        Logger.getLogger(ObserverTest.class);    
+        LoggerFactory.getLogger(ObserverTest.class);    
       
     CountDownLatch latch;
     ZooKeeper zk;
@@ -70,18 +71,17 @@ public class ObserverTest extends QuorumPeerTestBase implements Watcher{
         final int CLIENT_PORT_OBS = PortAssignment.unique();
 
         
-        String quorumCfgSection =
-            "electionAlg=3\n" + 
+        String quorumCfgSection = 
             "server.1=127.0.0.1:" + (PORT_QP1)
-            + ":" + (PORT_QP_LE1)
+            + ":" + (PORT_QP_LE1) + ";" +  CLIENT_PORT_QP1 
             + "\nserver.2=127.0.0.1:" + (PORT_QP2)
-            + ":" + (PORT_QP_LE2)
+            + ":" + (PORT_QP_LE2) + ";" + CLIENT_PORT_QP2  
             + "\nserver.3=127.0.0.1:" 
-            + (PORT_OBS)+ ":" + (PORT_OBS_LE) + ":observer";
-        String obsCfgSection =  quorumCfgSection + "\npeerType=observer";
+            + (PORT_OBS)+ ":" + (PORT_OBS_LE) + ":observer" + ";" + CLIENT_PORT_OBS;
+        
         MainThread q1 = new MainThread(1, CLIENT_PORT_QP1, quorumCfgSection);
         MainThread q2 = new MainThread(2, CLIENT_PORT_QP2, quorumCfgSection);
-        MainThread q3 = new MainThread(3, CLIENT_PORT_OBS, obsCfgSection);
+        MainThread q3 = new MainThread(3, CLIENT_PORT_OBS, quorumCfgSection);
         q1.start();
         q2.start();
         q3.start();
@@ -200,7 +200,7 @@ public class ObserverTest extends QuorumPeerTestBase implements Watcher{
         
         String quorumCfgSection =
             "server.1=127.0.0.1:" + (PortAssignment.unique())
-            + ":" + (PortAssignment.unique()) + ":observer\npeerType=observer\n";
+            + ":" + (PortAssignment.unique()) + ":observer;" + CLIENT_PORT_QP1 + "\n";
                     
         MainThread q1 = new MainThread(1, CLIENT_PORT_QP1, quorumCfgSection);
         q1.start();

@@ -21,9 +21,11 @@ import unittest, threading, zookeeper
 ZOO_OPEN_ACL_UNSAFE = {"perms":0x1f, "scheme":"world", "id" :"anyone"}
 
 class TestBase(unittest.TestCase):
+    SERVER_PORT = 22182
+    
     def __init__(self,methodName='runTest'):
         unittest.TestCase.__init__(self,methodName)
-        self.host = "localhost:22182"
+        self.host = "localhost:%d" % self.SERVER_PORT
         self.connected = False
         self.handle = -1
         logdir = os.environ.get("ZKPY_LOG_DIR")
@@ -32,7 +34,7 @@ class TestBase(unittest.TestCase):
             f = open(logfile,"w")
             zookeeper.set_log_stream(f)
         except IOError:
-            print "Couldn't open " + logfile + " for writing"
+            print("Couldn't open " + logfile + " for writing")
 
 
     def setUp(self):
@@ -91,3 +93,9 @@ class TestBase(unittest.TestCase):
     def tearDown(self):
         if self.connected:
             zookeeper.close(self.handle)
+
+    def all(self, iterable):
+        for element in iterable:
+            if not element:
+                return False
+        return True

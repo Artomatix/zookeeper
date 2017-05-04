@@ -23,7 +23,9 @@ import java.util.Collection;
 
 import javax.ws.rs.core.MediaType;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -38,7 +40,7 @@ import com.sun.jersey.api.client.ClientResponse;
  */
 @RunWith(Parameterized.class)
 public class ExistsTest extends Base {
-    protected static final Logger LOG = Logger.getLogger(ExistsTest.class);
+    protected static final Logger LOG = LoggerFactory.getLogger(ExistsTest.class);
 
     private String path;
     private ClientResponse.Status expectedStatus;
@@ -62,16 +64,15 @@ public class ExistsTest extends Base {
         ClientResponse cr = znodesr.path(path).accept(type).type(type).head();
         if (type.equals(MediaType.APPLICATION_OCTET_STREAM)
                 && expectedStatus == ClientResponse.Status.OK) {
-            assertEquals(ClientResponse.Status.NO_CONTENT,
+            Assert.assertEquals(ClientResponse.Status.NO_CONTENT,
                     cr.getClientResponseStatus());
         } else {
-            assertEquals(expectedStatus, cr.getClientResponseStatus());
+            Assert.assertEquals(expectedStatus, cr.getClientResponseStatus());
         }
     }
 
     @Test
     public void testExists() throws Exception {
-        LOG.info("STARTING " + getName());
         verify(MediaType.APPLICATION_OCTET_STREAM);
         verify(MediaType.APPLICATION_JSON);
         verify(MediaType.APPLICATION_XML);

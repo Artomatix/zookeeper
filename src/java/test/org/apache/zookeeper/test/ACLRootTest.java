@@ -18,7 +18,6 @@
 
 package org.apache.zookeeper.test;
 
-import org.apache.log4j.Logger;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooKeeper;
@@ -27,8 +26,6 @@ import org.junit.Assert;
 import org.junit.Test;
 
 public class ACLRootTest extends ClientBase {
-    private static final Logger LOG = Logger.getLogger(ACLRootTest.class);
-
     @Test
     public void testRootAcl() throws Exception {
         ZooKeeper zk = createClient();

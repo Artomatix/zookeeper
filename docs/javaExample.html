@@ -3,7 +3,7 @@
 <head>
 <META http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <meta content="Apache Forrest" name="Generator">
-<meta name="Forrest-version" content="0.8">
+<meta name="Forrest-version" content="0.9">
 <meta name="Forrest-skin-name" content="pelt">
 <title>ZooKeeper Java Example</title>
 <link type="text/css" href="skin/basic.css" rel="stylesheet">
@@ -20,7 +20,7 @@
     |breadtrail
     +-->
 <div class="breadtrail">
-<a href="http://www.apache.org/">Apache</a> &gt; <a href="http://hadoop.apache.org/">Hadoop</a> &gt; <a href="http://hadoop.apache.org/zookeeper/">ZooKeeper</a><script src="skin/breadcrumbs.js" language="JavaScript" type="text/javascript"></script>
+<a href="http://www.apache.org/">Apache</a> &gt; <a href="http://zookeeper.apache.org/">ZooKeeper</a> &gt; <a href="http://zookeeper.apache.org/">ZooKeeper</a><script src="skin/breadcrumbs.js" language="JavaScript" type="text/javascript"></script>
 </div>
 <!--+
     |header
@@ -39,7 +39,7 @@
     |start Project Logo
     +-->
 <div class="projectlogo">
-<a href="http://hadoop.apache.org/zookeeper/"><img class="logoImage" alt="ZooKeeper" src="images/zookeeper_small.gif" title="ZooKeeper: distributed coordination"></a>
+<a href="http://zookeeper.apache.org/"><img class="logoImage" alt="ZooKeeper" src="images/zookeeper_small.gif" title="ZooKeeper: distributed coordination"></a>
 </div>
 <!--+
     |end Project Logo
@@ -49,7 +49,7 @@
     +-->
 <div class="searchbox">
 <form action="http://www.google.com/search" method="get" class="roundtopsmall">
-<input value="hadoop.apache.org" name="sitesearch" type="hidden"><input onFocus="getBlank (this, 'Search the site with google');" size="25" name="q" id="query" type="text" value="Search the site with google">&nbsp; 
+<input value="zookeeper.apache.org" name="sitesearch" type="hidden"><input onFocus="getBlank (this, 'Search the site with google');" size="25" name="q" id="query" type="text" value="Search the site with google">&nbsp; 
                     <input name="Search" value="Search" type="submit">
 </form>
 </div>
@@ -61,13 +61,13 @@
     +-->
 <ul id="tabs">
 <li>
-<a class="unselected" href="http://hadoop.apache.org/zookeeper/">Project</a>
+<a class="unselected" href="http://zookeeper.apache.org/">Project</a>
 </li>
 <li>
-<a class="unselected" href="http://wiki.apache.org/hadoop/ZooKeeper">Wiki</a>
+<a class="unselected" href="https://cwiki.apache.org/confluence/display/ZOOKEEPER/">Wiki</a>
 </li>
 <li class="current">
-<a class="selected" href="index.html">ZooKeeper 3.4 Documentation</a>
+<a class="selected" href="index.html">ZooKeeper 3.6 Documentation</a>
 </li>
 </ul>
 <!--+
@@ -135,23 +135,8 @@ document.write("Last Published: " + document.lastModified);
 <a href="recipes.html">Recipes</a>
 </div>
 </div>
-<div onclick="SwitchMenu('menu_1.3', 'skin/')" id="menu_1.3Title" class="menutitle">BookKeeper</div>
+<div onclick="SwitchMenu('menu_1.3', 'skin/')" id="menu_1.3Title" class="menutitle">Admin &amp; Ops</div>
 <div id="menu_1.3" class="menuitemgroup">
-<div class="menuitem">
-<a href="bookkeeperStarted.html">Getting started</a>
-</div>
-<div class="menuitem">
-<a href="bookkeeperOverview.html">Overview</a>
-</div>
-<div class="menuitem">
-<a href="bookkeeperConfig.html">Setup guide</a>
-</div>
-<div class="menuitem">
-<a href="bookkeeperProgrammer.html">Programmer's guide</a>
-</div>
-</div>
-<div onclick="SwitchMenu('menu_1.4', 'skin/')" id="menu_1.4Title" class="menutitle">Admin &amp; Ops</div>
-<div id="menu_1.4" class="menuitemgroup">
 <div class="menuitem">
 <a href="zookeeperAdmin.html">Administrator's Guide</a>
 </div>
@@ -164,23 +149,26 @@ document.write("Last Published: " + document.lastModified);
 <div class="menuitem">
 <a href="zookeeperObservers.html">Observers Guide</a>
 </div>
+<div class="menuitem">
+<a href="zookeeperReconfig.html">Dynamic Reconfiguration</a>
 </div>
-<div onclick="SwitchMenu('menu_1.5', 'skin/')" id="menu_1.5Title" class="menutitle">Contributor</div>
-<div id="menu_1.5" class="menuitemgroup">
+</div>
+<div onclick="SwitchMenu('menu_1.4', 'skin/')" id="menu_1.4Title" class="menutitle">Contributor</div>
+<div id="menu_1.4" class="menuitemgroup">
 <div class="menuitem">
 <a href="zookeeperInternals.html">ZooKeeper Internals</a>
 </div>
 </div>
-<div onclick="SwitchMenu('menu_1.6', 'skin/')" id="menu_1.6Title" class="menutitle">Miscellaneous</div>
-<div id="menu_1.6" class="menuitemgroup">
+<div onclick="SwitchMenu('menu_1.5', 'skin/')" id="menu_1.5Title" class="menutitle">Miscellaneous</div>
+<div id="menu_1.5" class="menuitemgroup">
 <div class="menuitem">
-<a href="http://wiki.apache.org/hadoop/ZooKeeper">Wiki</a>
+<a href="https://cwiki.apache.org/confluence/display/ZOOKEEPER">Wiki</a>
 </div>
 <div class="menuitem">
-<a href="http://wiki.apache.org/hadoop/ZooKeeper/FAQ">FAQ</a>
+<a href="https://cwiki.apache.org/confluence/display/ZOOKEEPER/FAQ">FAQ</a>
 </div>
 <div class="menuitem">
-<a href="http://hadoop.apache.org/zookeeper/mailing_lists.html">Mailing Lists</a>
+<a href="http://zookeeper.apache.org/mailing_lists.html">Mailing Lists</a>
 </div>
 </div>
 <div id="credit"></div>
@@ -203,6 +191,7 @@ document.write("Last Published: " + document.lastModified);
         PDF</a>
 </div>
 <h1>ZooKeeper Java Example</h1>
+<div id="front-matter">
 <div id="minitoc-area">
 <ul class="minitoc">
 <li>
@@ -227,53 +216,58 @@ document.write("Last Published: " + document.lastModified);
 </li>
 </ul>
 </div>
+</div>
   
 
   
 
   
-<a name="N10009"></a><a name="ch_Introduction"></a>
+<a name="ch_Introduction"></a>
 <h2 class="h3">A Simple Watch Client</h2>
 <div class="section">
 <p>To introduce you to the ZooKeeper Java API, we develop here a very simple 
     watch client. This ZooKeeper client watches a ZooKeeper node for changes 
     and responds to by starting or stopping a program.</p>
-<a name="N10012"></a><a name="sc_requirements"></a>
+<a name="sc_requirements"></a>
 <h3 class="h4">Requirements</h3>
 <p>The client has four requirements:</p>
 <ul>
 <li>
 <p>It takes as parameters:</p>
-    	
+        
 <ul>
-		
+        
 <li>
 <p>the address of the ZooKeeper service</p>
 </li>
-		
-<li> 
-<p>then name of a znode - the one to be watched</p>
+        
+<li>
+<p>the name of a znode - the one to be watched</p>
 </li>
-		
+        
+<li>
+<p>the name of a file to write the output to</p>
+</li>
+        
 <li>
 <p>an executable with arguments.</p>
 </li>
 </ul>
 </li>
-	
+    
 <li>
 <p>It fetches the data associated with the znode and starts the executable.</p>
 </li>
-	
+    
 <li>
 <p>If the znode changes, the client refetches the contents and restarts the executable.</p>
 </li>
-	
+    
 <li>
 <p>If the znode disappears, the client kills the executable.</p>
 </li>
 </ul>
-<a name="N1003B"></a><a name="sc_design"></a>
+<a name="sc_design"></a>
 <h3 class="h4">Program Design</h3>
 <p>Conventionally, ZooKeeper applications are broken into two units, one which maintains the connection, 
    and the other which monitors data.  In this application, the class called the <strong>Executor</strong> 
@@ -285,7 +279,7 @@ document.write("Last Published: " + document.lastModified);
 </div>
 
    
-<a name="N1004C"></a><a name="sc_executor"></a>
+<a name="sc_executor"></a>
 <h2 class="h3">The Executor Class</h2>
 <div class="section">
 <p>The Executor object is the primary container of the sample application. It contains 
@@ -431,7 +425,7 @@ public void closing(int rc) {
 </pre>
 </div>
 
-<a name="N100A0"></a><a name="sc_DataMonitor"></a>
+<a name="sc_DataMonitor"></a>
 <h2 class="h3">The DataMonitor Class</h2>
 <div class="section">
 <p>
@@ -571,7 +565,7 @@ function, when DataMonitor gets an event for a znode, it calls
 </div>
 
 
-<a name="N10104"></a><a name="sc_completeSourceCode"></a>
+<a name="sc_completeSourceCode"></a>
 <h2 class="h3">Complete Source Listings</h2>
 <div class="section">
 <div class="note example">
@@ -896,7 +890,7 @@ document.write("Last Published: " + document.lastModified);
 </div>
 <div class="copyright">
         Copyright &copy;
-         2008 <a href="http://www.apache.org/licenses/">The Apache Software Foundation.</a>
+          <a href="http://www.apache.org/licenses/">The Apache Software Foundation.</a>
 </div>
 <!--+
     |end bottomstrip

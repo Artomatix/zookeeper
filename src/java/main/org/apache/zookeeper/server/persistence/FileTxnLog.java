@@ -19,7 +19,6 @@ package org.apache.zookeeper.server.persistence;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.ByteArrayInputStream;
 import java.io.EOFException;
 import java.io.File;
 import java.io.FileInputStream;
@@ -32,6 +31,7 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.Adler32;
 import java.util.zip.Checksum;
 
@@ -40,9 +40,11 @@ import org.apache.jute.BinaryOutputArchive;
 import org.apache.jute.InputArchive;
 import org.apache.jute.OutputArchive;
 import org.apache.jute.Record;
-import org.apache.log4j.Logger;
+import org.apache.zookeeper.server.persistence.TxnLog.TxnIterator;
 import org.apache.zookeeper.server.util.SerializeUtils;
 import org.apache.zookeeper.txn.TxnHeader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This class implements the TxnLog interface. It provides api's
@@ -96,11 +98,11 @@ public class FileTxnLog implements TxnLog {
 
     public final static int VERSION = 2;
 
-    static {
-        LOG = Logger.getLogger(FileTxnLog.class);
+    /** Maximum time we allow for elapsed fsync before WARNing */
+    private final static long fsyncWarningThresholdMS;
 
-        forceSync =
-            !System.getProperty("zookeeper.forceSync", "yes").equals("no");
+    static {
+        LOG = LoggerFactory.getLogger(FileTxnLog.class);
 
         String size = System.getProperty("zookeeper.preAllocSize");
         if (size != null) {
@@ -110,6 +112,11 @@ public class FileTxnLog implements TxnLog {
                 LOG.warn(size + " is not a valid value for preAllocSize");
             }
         }
+        /** Local variable to read fsync.warningthresholdms into */
+        Long fsyncWarningThreshold;
+        if ((fsyncWarningThreshold = Long.getLong("zookeeper.fsync.warningthresholdms")) == null)
+            fsyncWarningThreshold = Long.getLong("fsync.warningthresholdms", 1000);
+        fsyncWarningThresholdMS = fsyncWarningThreshold;
     }
 
     long lastZxidSeen;
@@ -118,12 +125,14 @@ public class FileTxnLog implements TxnLog {
     volatile FileOutputStream fos = null;
 
     File logDir;
-    private static boolean forceSync = true;
+    private final boolean forceSync = !System.getProperty("zookeeper.forceSync", "yes").equals("no");;
     long dbId;
     private LinkedList<FileOutputStream> streamsToFlush =
         new LinkedList<FileOutputStream>();
     long currentSize;
     File logFileWrite = null;
+
+    private volatile long syncElapsedMS = -1L;
 
     /**
      * constructor for FileTxnLog. Take the directory
@@ -205,6 +214,8 @@ public class FileTxnLog implements TxnLog {
                oa = BinaryOutputArchive.getArchive(logStream);
                FileHeader fhdr = new FileHeader(TXNLOG_MAGIC,VERSION, dbId);
                fhdr.serialize(oa, "fileheader");
+               // Make sure that the magic number is written before padding.
+               logStream.flush();
                currentSize = fos.getChannel().position();
                streamsToFlush.add(fos);
             }
@@ -281,9 +292,10 @@ public class FileTxnLog implements TxnLog {
         // if a log file is more recent we must scan it to find
         // the highest zxid
         long zxid = maxLog;
+        TxnIterator itr = null;
         try {
             FileTxnLog txn = new FileTxnLog(logDir);
-            TxnIterator itr = txn.read(maxLog);
+            itr = txn.read(maxLog);
             while (true) {
                 if(!itr.next())
                     break;
@@ -292,12 +304,24 @@ public class FileTxnLog implements TxnLog {
             }
         } catch (IOException e) {
             LOG.warn("Unexpected exception", e);
+        } finally {
+            close(itr);
         }
         return zxid;
     }
 
+    private void close(TxnIterator itr) {
+        if (itr != null) {
+            try {
+                itr.close();
+            } catch (IOException ioe) {
+                LOG.warn("Error closing file iterator", ioe);
+            }
+        }
+    }
+
     /**
-     * commit the logs. make sure that evertyhing hits the
+     * commit the logs. make sure that everything hits the
      * disk
      */
     public synchronized void commit() throws IOException {
@@ -307,12 +331,31 @@ public class FileTxnLog implements TxnLog {
         for (FileOutputStream log : streamsToFlush) {
             log.flush();
             if (forceSync) {
+                long startSyncNS = System.nanoTime();
+
                 log.getChannel().force(false);
+
+                syncElapsedMS = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startSyncNS);
+                if (syncElapsedMS > fsyncWarningThresholdMS) {
+                    LOG.warn("fsync-ing the write ahead log in "
+                            + Thread.currentThread().getName()
+                            + " took " + syncElapsedMS
+                            + "ms which will adversely effect operation latency. "
+                            + "See the ZooKeeper troubleshooting guide");
+                }
             }
         }
         while (streamsToFlush.size() > 1) {
             streamsToFlush.removeFirst().close();
         }
+    }
+
+    /**
+     *
+     * @return elapsed sync time of transaction log in miliseconds
+     */
+    public long getTxnLogSyncElapsedTime() {
+        return syncElapsedMS;
     }
 
     /**
@@ -322,7 +365,20 @@ public class FileTxnLog implements TxnLog {
      * logs
      */
     public TxnIterator read(long zxid) throws IOException {
-        return new FileTxnIterator(logDir, zxid);
+        return read(zxid, true);
+    }
+
+    /**
+     * start reading all the transactions from the given zxid.
+     *
+     * @param zxid the zxid to start reading transactions from
+     * @param fastForward true if the iterator should be fast forwarded to point
+     *        to the txn of a given zxid, else the iterator will point to the
+     *        starting txn of a txnlog that may contain txn of a given zxid
+     * @return returns an iterator to iterate through the transaction logs
+     */
+    public TxnIterator read(long zxid, boolean fastForward) throws IOException {
+        return new FileTxnIterator(logDir, zxid, fastForward);
     }
 
     /**
@@ -331,17 +387,27 @@ public class FileTxnLog implements TxnLog {
      * @return true if successful false if not
      */
     public boolean truncate(long zxid) throws IOException {
-        FileTxnIterator itr = new FileTxnIterator(this.logDir, zxid);
-        PositionInputStream input = itr.inputStream;
-        long pos = input.getPosition();
-        // now, truncate at the current position
-        RandomAccessFile raf=new RandomAccessFile(itr.logFile,"rw");
-        raf.setLength(pos);
-        raf.close();
-        while(itr.goToNextLog()) {
-            if (!itr.logFile.delete()) {
-                LOG.warn("Unable to truncate " + itr.logFile);
+        FileTxnIterator itr = null;
+        try {
+            itr = new FileTxnIterator(this.logDir, zxid);
+            PositionInputStream input = itr.inputStream;
+            if(input == null) {
+                throw new IOException("No log files found to truncate! This could " +
+                        "happen if you still have snapshots from an old setup or " +
+                        "log files were deleted accidentally or dataLogDir was changed in zoo.cfg.");
             }
+            long pos = input.getPosition();
+            // now, truncate at the current position
+            RandomAccessFile raf=new RandomAccessFile(itr.logFile,"rw");
+            raf.setLength(pos);
+            raf.close();
+            while(itr.goToNextLog()) {
+                if (!itr.logFile.delete()) {
+                    LOG.warn("Unable to truncate {}", itr.logFile);
+                }
+            }
+        } finally {
+            close(itr);
         }
         return true;
     }
@@ -383,6 +449,14 @@ public class FileTxnLog implements TxnLog {
     }
 
     /**
+     * the forceSync value. true if forceSync is enabled, false otherwise.
+     * @return the forceSync value
+     */
+    public boolean isForceSync() {
+        return forceSync;
+    }
+
+    /**
      * a class that keeps track of the position 
      * in the input stream. The position points to offset
      * that has been consumed by the applications. It can 
@@ -393,21 +467,32 @@ public class FileTxnLog implements TxnLog {
         long position;
         protected PositionInputStream(InputStream in) {
             super(in);
+            position = 0;
         }
         
         @Override
         public int read() throws IOException {
             int rc = super.read();
-            if (rc > 0) {
+            if (rc > -1) {
                 position++;
             }
             return rc;
+        }
+
+        public int read(byte[] b) throws IOException {
+            int rc = super.read(b);
+            if (rc > 0) {
+                position += rc;
+            }
+            return rc;            
         }
         
         @Override
         public int read(byte[] b, int off, int len) throws IOException {
             int rc = super.read(b, off, len);
-            position += rc;
+            if (rc > 0) {
+                position += rc;
+            }
             return rc;
         }
         
@@ -421,6 +506,21 @@ public class FileTxnLog implements TxnLog {
         }
         public long getPosition() {
             return position;
+        }
+
+        @Override
+        public boolean markSupported() {
+            return false;
+        }
+
+        @Override
+        public void mark(int readLimit) {
+            throw new UnsupportedOperationException("mark");
+        }
+
+        @Override
+        public void reset() {
+            throw new UnsupportedOperationException("reset");
         }
     }
     
@@ -446,12 +546,34 @@ public class FileTxnLog implements TxnLog {
          * create an iterator over a transaction database directory
          * @param logDir the transaction database directory
          * @param zxid the zxid to start reading from
+         * @param fastForward   true if the iterator should be fast forwarded to
+         *        point to the txn of a given zxid, else the iterator will
+         *        point to the starting txn of a txnlog that may contain txn of
+         *        a given zxid
+         * @throws IOException
+         */
+        public FileTxnIterator(File logDir, long zxid, boolean fastForward)
+                throws IOException {
+            this.logDir = logDir;
+            this.zxid = zxid;
+            init();
+
+            if (fastForward && hdr != null) {
+                while (hdr.getZxid() < zxid) {
+                    if (!next())
+                        break;
+                }
+            }
+        }
+        
+        /**
+         * create an iterator over a transaction database directory
+         * @param logDir the transaction database directory
+         * @param zxid the zxid to start reading from
          * @throws IOException
          */
         public FileTxnIterator(File logDir, long zxid) throws IOException {
-          this.logDir = logDir;
-          this.zxid = zxid;
-          init();
+            this(logDir, zxid, true);
         }
 
         /**
@@ -475,10 +597,17 @@ public class FileTxnLog implements TxnLog {
             goToNextLog();
             if (!next())
                 return;
-            while (hdr.getZxid() < zxid) {
-                if (!next())
-                    return;
+        }
+        
+        /**
+         * Return total storage size of txnlog that will return by this iterator.
+         */
+        public long getStorageSize() {
+            long sum = 0;
+            for (File f : storedFiles) {
+                sum += f.length();
             }
+            return sum;
         }
 
         /**
@@ -497,7 +626,7 @@ public class FileTxnLog implements TxnLog {
         }
 
         /**
-         * read the header fomr the inputarchive
+         * read the header from the inputarchive
          * @param ia the inputarchive to be read from
          * @param is the inputstream
          * @throws IOException
@@ -551,30 +680,33 @@ public class FileTxnLog implements TxnLog {
                 long crcValue = ia.readLong("crcvalue");
                 byte[] bytes = Util.readTxnBytes(ia);
                 // Since we preallocate, we define EOF to be an
-                if (bytes == null || bytes.length==0)
-                   throw new EOFException("Failed to read");
+                if (bytes == null || bytes.length==0) {
+                    throw new EOFException("Failed to read " + logFile);
+                }
                 // EOF or corrupted record
                 // validate CRC
                 Checksum crc = makeChecksumAlgorithm();
                 crc.update(bytes, 0, bytes.length);
                 if (crcValue != crc.getValue())
                     throw new IOException(CRC_ERROR);
-                if (bytes == null || bytes.length == 0)
-                    return false;
-                InputArchive iab = BinaryInputArchive
-                                    .getArchive(new ByteArrayInputStream(bytes));
                 hdr = new TxnHeader();
-                record = SerializeUtils.deserializeTxn(iab, hdr);
+                record = SerializeUtils.deserializeTxn(bytes, hdr);
             } catch (EOFException e) {
                 LOG.debug("EOF excepton " + e);
                 inputStream.close();
                 inputStream = null;
                 ia = null;
-                // thsi means that the file has ended
-                // we shoud go to the next file
+                hdr = null;
+                // this means that the file has ended
+                // we should go to the next file
                 if (!goToNextLog()) {
                     return false;
                 }
+                // if we went to the next log file, we should call next() again
+                return next();
+            } catch (IOException e) {
+                inputStream.close();
+                throw e;
             }
             return true;
         }
@@ -602,7 +734,9 @@ public class FileTxnLog implements TxnLog {
          * and release the resources.
          */
         public void close() throws IOException {
-            inputStream.close();
+            if (inputStream != null) {
+                inputStream.close();
+            }
         }
     }
 

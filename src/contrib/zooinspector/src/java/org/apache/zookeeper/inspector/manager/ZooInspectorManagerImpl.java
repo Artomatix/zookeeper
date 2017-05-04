@@ -82,9 +82,18 @@ public class ZooInspectorManagerImpl implements ZooInspectorManager {
      * file
      */
     public static final String DATA_ENCRYPTION_MANAGER = "encryptionManager";
+    /**
+     * The key used for the authentication scheme in the connection properties file
+     */
+    public static final String AUTH_SCHEME_KEY = "authScheme";
+    /**
+     * The key used for the authentication data in the connection properties file
+     */
+    public static final String AUTH_DATA_KEY = "authData";
+
 
     private static final File defaultNodeViewersFile = new File(
-            "./config/defaultNodeVeiwers.cfg");
+            "./config/defaultNodeViewers.cfg");
     private static final File defaultConnectionFile = new File(
             "./config/defaultConnectionSettings.cfg");
 
@@ -98,6 +107,9 @@ public class ZooInspectorManagerImpl implements ZooInspectorManager {
     private String defaultEncryptionManager;
     private String defaultTimeout;
     private String defaultHosts;
+    private String defaultAuthScheme;
+    private String defaultAuthValue;
+    private NodesCache nodesCache;
 
     /**
      * @throws IOException
@@ -124,6 +136,11 @@ public class ZooInspectorManagerImpl implements ZooInspectorManager {
                         .getProperty(SESSION_TIMEOUT);
                 String encryptionManager = connectionProps
                         .getProperty(DATA_ENCRYPTION_MANAGER);
+                String authScheme = connectionProps
+                        .getProperty(AUTH_SCHEME_KEY);
+                String authData = connectionProps
+                        .getProperty(AUTH_DATA_KEY);
+
                 if (connectString == null || sessionTimeout == null) {
                     throw new IllegalArgumentException(
                             "Both connect string and session timeout are required.");
@@ -153,14 +170,21 @@ public class ZooInspectorManagerImpl implements ZooInspectorManager {
                         }
                     }
                 });
+                if (authData != null && authData.length() > 0){
+                    this.zooKeeper.addAuthInfo(authScheme, authData.getBytes());
+                }
                 ((ZooKeeperRetry) this.zooKeeper).setRetryLimit(10);
                 connected = ((ZooKeeperRetry) this.zooKeeper).testConnection();
-                return connected;
             }
         } catch (Exception e) {
+            connected = false;
             e.printStackTrace();
         }
-        connected = false;
+        if (!connected){
+        	disconnect();
+        } else {
+            this.nodesCache = new NodesCache(zooKeeper);
+        }
         return connected;
     }
 
@@ -195,14 +219,7 @@ public class ZooInspectorManagerImpl implements ZooInspectorManager {
      */
     public List<String> getChildren(String nodePath) {
         if (connected) {
-            try {
-
-                return zooKeeper.getChildren(nodePath, false);
-            } catch (Exception e) {
-                LoggerFactory.getLogger().error(
-                        "Error occurred retrieving children of node: "
-                                + nodePath, e);
-            }
+            return nodesCache.getChildren(nodePath);
         }
         return null;
 
@@ -242,17 +259,7 @@ public class ZooInspectorManagerImpl implements ZooInspectorManager {
      */
     public String getNodeChild(String nodePath, int childIndex) {
         if (connected) {
-            try {
-                Stat s = zooKeeper.exists(nodePath, false);
-                if (s != null) {
-                    return this.zooKeeper.getChildren(nodePath, false).get(
-                            childIndex);
-                }
-            } catch (Exception e) {
-                LoggerFactory.getLogger().error(
-                        "Error occurred retrieving child " + childIndex
-                                + " of node: " + nodePath, e);
-            }
+             return this.nodesCache.getNodeChild(nodePath, childIndex);
         }
         return null;
     }
@@ -275,7 +282,7 @@ public class ZooInspectorManagerImpl implements ZooInspectorManager {
             String parentPath = nodePath.substring(0, index);
             String child = nodePath.substring(index + 1);
             if (parentPath != null && parentPath.length() > 0) {
-                List<String> children = this.getChildren(parentPath);
+                List<String> children = this.nodesCache.getChildren(parentPath);
                 if (children != null) {
                     return children.indexOf(child);
                 }
@@ -571,10 +578,16 @@ public class ZooInspectorManagerImpl implements ZooInspectorManager {
                 .asList(new String[] { defaultTimeout }));
         template.put(DATA_ENCRYPTION_MANAGER, Arrays
                 .asList(new String[] { defaultEncryptionManager }));
+        template.put(AUTH_SCHEME_KEY, Arrays
+                .asList(new String[] { defaultAuthScheme }));
+        template.put(AUTH_DATA_KEY, Arrays
+                .asList(new String[] { defaultAuthValue }));
         Map<String, String> labels = new LinkedHashMap<String, String>();
         labels.put(CONNECT_STRING, "Connect String");
         labels.put(SESSION_TIMEOUT, "Session Timeout");
         labels.put(DATA_ENCRYPTION_MANAGER, "Data Encryption Manager");
+        labels.put(AUTH_SCHEME_KEY, "Authentication Scheme");
+        labels.put(AUTH_DATA_KEY, "Authentication Data");
         return new Pair<Map<String, List<String>>, Map<String, String>>(
                 template, labels);
     }
@@ -599,7 +612,7 @@ public class ZooInspectorManagerImpl implements ZooInspectorManager {
                                 zooKeeper));
                     } catch (Exception e) {
                         LoggerFactory.getLogger().error(
-                                "Error occured adding node watcher for node: "
+                                "Error occurred adding node watcher for node: "
                                         + node, e);
                     }
                 }
@@ -674,7 +687,7 @@ public class ZooInspectorManagerImpl implements ZooInspectorManager {
                     }
                 } catch (Exception e) {
                     LoggerFactory.getLogger().error(
-                            "Error occured re-adding node watcherfor node "
+                            "Error occurred re-adding node watcherfor node "
                                     + nodePath, e);
                 }
                 nodeListener.processEvent(event.getPath(), event.getType()
@@ -707,7 +720,7 @@ public class ZooInspectorManagerImpl implements ZooInspectorManager {
                 try {
                     while (buff.ready()) {
                         String line = buff.readLine();
-                        if (line != null && line.length() > 0) {
+                        if (line != null && line.length() > 0 && !line.startsWith("#")) {
                             result.add(line);
                         }
                     }
@@ -738,10 +751,16 @@ public class ZooInspectorManagerImpl implements ZooInspectorManager {
                     : props.getProperty(SESSION_TIMEOUT);
             defaultHosts = props.getProperty(CONNECT_STRING) == null ? "localhost:2181"
                     : props.getProperty(CONNECT_STRING);
+            defaultAuthScheme = props.getProperty(AUTH_SCHEME_KEY) == null ? ""
+                    : props.getProperty(AUTH_SCHEME_KEY);
+            defaultAuthValue = props.getProperty(AUTH_DATA_KEY) == null ? ""
+                    : props.getProperty(AUTH_DATA_KEY);
         } else {
             defaultEncryptionManager = "org.apache.zookeeper.inspector.encryption.BasicDataEncryptionManager";
             defaultTimeout = "5000";
             defaultHosts = "localhost:2181";
+            defaultAuthScheme = "";
+            defaultAuthValue = "";
         }
     }
 
@@ -827,7 +846,11 @@ public class ZooInspectorManagerImpl implements ZooInspectorManager {
     }
 
     public List<String> getDefaultNodeViewerConfiguration() throws IOException {
-        return loadNodeViewersFile(defaultNodeViewersFile);
+        List<String> defaultNodeViewers = loadNodeViewersFile(defaultNodeViewersFile);
+        if (defaultNodeViewers.isEmpty()) {
+            LoggerFactory.getLogger().warn("List of default node viewers is empty");
+        }
+        return defaultNodeViewers;
     }
 
     /*

@@ -21,7 +21,9 @@
 #include <stdio.h>
 #include <errno.h>
 #include <stdlib.h>
+#ifndef WIN32
 #include <netinet/in.h>
+#endif
 
 void deallocate_String(char **s)
 {
@@ -78,7 +80,7 @@ int oa_serialize_int(struct oarchive *oa, const char *tag, const int32_t *d)
     priv->off+=sizeof(i);
     return 0;
 }
-int64_t htonll(int64_t v)
+int64_t zoo_htonll(int64_t v)
 {
     int i = 0;
     char *s = (char *)&v;
@@ -96,7 +98,7 @@ int64_t htonll(int64_t v)
 
 int oa_serialize_long(struct oarchive *oa, const char *tag, const int64_t *d)
 {
-    const int64_t i = htonll(*d);
+    const int64_t i = zoo_htonll(*d);
     struct buff_struct *priv = oa->priv;
     if ((priv->len - priv->off) < sizeof(i)) {
         int rc = resize_buffer(priv, priv->len + sizeof(i));
@@ -205,7 +207,7 @@ int ia_deserialize_long(struct iarchive *ia, const char *tag, int64_t *count)
     }
     memcpy(count, priv->buffer+priv->off, sizeof(*count));
     priv->off+=sizeof(*count);
-    v = htonll(*count); // htonll and  ntohll do the same
+    v = zoo_htonll(*count); // htonll and  ntohll do the same
     *count = v;
     return 0;
 }
@@ -276,27 +278,35 @@ int ia_deserialize_string(struct iarchive *ia, const char *name, char **s)
     return 0;
 }
 
-static struct iarchive ia_default = { .start_record = ia_start_record,
-        .end_record = ia_end_record, .start_vector = ia_start_vector,
-        .end_vector = ia_end_vector, .deserialize_Bool = ia_deserialize_bool,
-        .deserialize_Int = ia_deserialize_int,
-        .deserialize_Buffer = ia_deserialize_buffer,
-        .deserialize_String = ia_deserialize_string,
-        .deserialize_Long = ia_deserialize_long };
+static struct iarchive ia_default = {
+        ia_start_record,
+        ia_end_record,
+        ia_start_vector,
+        ia_end_vector,
+        ia_deserialize_bool,
+        ia_deserialize_int,
+        ia_deserialize_long ,
+        ia_deserialize_buffer,
+        ia_deserialize_string};
 
-static struct oarchive oa_default = { .start_record = oa_start_record,
-        .end_record = oa_end_record, .start_vector = oa_start_vector,
-        .end_vector = oa_end_vector, .serialize_Bool = oa_serialize_bool,
-        .serialize_Int = oa_serialize_int,
-        .serialize_Buffer = oa_serialize_buffer,
-        .serialize_String = oa_serialize_string,
-        .serialize_Long = oa_serialize_long };
+static struct oarchive oa_default = {
+        oa_start_record,
+        oa_end_record,
+        oa_start_vector,
+        oa_end_vector,
+        oa_serialize_bool,
+        oa_serialize_int,
+        oa_serialize_long ,
+        oa_serialize_buffer,
+        oa_serialize_string};
 
 struct iarchive *create_buffer_iarchive(char *buffer, int len)
 {
-    struct iarchive *ia = malloc(sizeof(*ia));
-    struct buff_struct *buff = malloc(sizeof(struct buff_struct));
+    struct iarchive *ia;
+    struct buff_struct *buff;
+    ia = malloc(sizeof(*ia));
     if (!ia) return 0;
+    buff = malloc(sizeof(struct buff_struct));
     if (!buff) {
         free(ia);
         return 0;
@@ -311,9 +321,11 @@ struct iarchive *create_buffer_iarchive(char *buffer, int len)
 
 struct oarchive *create_buffer_oarchive()
 {
-    struct oarchive *oa = malloc(sizeof(*oa));
-    struct buff_struct *buff = malloc(sizeof(struct buff_struct));
+    struct oarchive *oa;
+    struct buff_struct *buff;
+    oa = malloc(sizeof(*oa));
     if (!oa) return 0;
+    buff = malloc(sizeof(struct buff_struct));
     if (!buff) {
         free(oa);
         return 0;

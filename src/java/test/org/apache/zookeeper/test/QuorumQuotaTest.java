@@ -18,7 +18,6 @@
 
 package org.apache.zookeeper.test;
 
-import org.apache.log4j.Logger;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.Quotas;
 import org.apache.zookeeper.StatsTrack;
@@ -30,8 +29,6 @@ import org.junit.Assert;
 import org.junit.Test;
 
 public class QuorumQuotaTest extends QuorumBase {
-    private static final Logger LOG =
-        Logger.getLogger(QuorumQuotaTest.class);
 
     @Test
     public void testQuotaWithQuorum() throws Exception {

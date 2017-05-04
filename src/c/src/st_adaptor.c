@@ -24,42 +24,30 @@
 #include <stdlib.h>
 #include <time.h>
 
-void zoo_lock_auth(zhandle_t *zh)
-{
-}
-void zoo_unlock_auth(zhandle_t *zh)
-{
-}
-void lock_buffer_list(buffer_head_t *l)
-{
-}
-void unlock_buffer_list(buffer_head_t *l)
-{
-}
-void lock_completion_list(completion_head_t *l)
-{
-}
-void unlock_completion_list(completion_head_t *l)
-{
-}
-struct sync_completion *alloc_sync_completion(void)
-{
-    return (struct sync_completion*)calloc(1, sizeof(struct sync_completion));
-}
-int wait_sync_completion(struct sync_completion *sc)
+int zoo_lock_auth(zhandle_t *zh)
 {
     return 0;
 }
-
-void free_sync_completion(struct sync_completion *sc)
+int zoo_unlock_auth(zhandle_t *zh)
 {
-    free(sc);
+    return 0;
 }
-
-void notify_sync_completion(struct sync_completion *sc)
+int lock_buffer_list(buffer_head_t *l)
 {
+    return 0;
 }
-
+int unlock_buffer_list(buffer_head_t *l)
+{
+    return 0;
+}
+int lock_completion_list(completion_head_t *l)
+{
+    return 0;
+}
+int unlock_completion_list(completion_head_t *l)
+{
+    return 0;
+}
 int process_async(int outstanding_sync)
 {
     return outstanding_sync == 0;
@@ -95,5 +83,23 @@ int32_t get_xid()
     }
     return xid++;
 }
-void enter_critical(zhandle_t* zh){}
-void leave_critical(zhandle_t* zh){}
+
+int lock_reconfig(struct _zhandle *zh)
+{
+    return 0;
+}
+
+int unlock_reconfig(struct _zhandle *zh)
+{
+    return 0;
+}
+
+int enter_critical(zhandle_t* zh)
+{
+    return 0;
+}
+
+int leave_critical(zhandle_t* zh)
+{
+    return 0;
+}

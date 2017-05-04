@@ -18,23 +18,27 @@
 
 package org.apache.zookeeper.test;
 
+import java.lang.Exception;
 import java.util.concurrent.CountDownLatch;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.test.AsyncOps.ACLCB;
 import org.apache.zookeeper.test.AsyncOps.Children2CB;
 import org.apache.zookeeper.test.AsyncOps.ChildrenCB;
+import org.apache.zookeeper.test.AsyncOps.Create2CB;
 import org.apache.zookeeper.test.AsyncOps.DataCB;
 import org.apache.zookeeper.test.AsyncOps.StatCB;
 import org.apache.zookeeper.test.AsyncOps.StringCB;
 import org.apache.zookeeper.test.AsyncOps.VoidCB;
+import org.apache.zookeeper.test.AsyncOps.MultiCB;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
 public class AsyncOpsTest extends ClientBase {
-    private static final Logger LOG = Logger.getLogger(AsyncOpsTest.class);
+    private static final Logger LOG = LoggerFactory.getLogger(AsyncOpsTest.class);
 
     private ZooKeeper zk;
 
@@ -65,6 +69,11 @@ public class AsyncOpsTest extends ClientBase {
     }
 
     @Test
+    public void testAsyncCreate2() {
+        new Create2CB(zk).verifyCreate();
+    }
+
+    @Test
     public void testAsyncCreateThree() {
         CountDownLatch latch = new CountDownLatch(3);
 
@@ -90,6 +99,32 @@ public class AsyncOpsTest extends ClientBase {
     }
 
     @Test
+    public void testAsyncCreateFailure_NoNode() {
+        new StringCB(zk).verifyCreateFailure_NoNode();
+    }
+
+    @Test
+    public void testAsyncCreateFailure_NoChildForEphemeral() {
+        new StringCB(zk).verifyCreateFailure_NoChildForEphemeral();
+    }
+
+    @Test
+    public void testAsyncCreate2Failure_NodeExists() {
+        new Create2CB(zk).verifyCreateFailure_NodeExists();
+    }
+
+    @Test
+    public void testAsyncCreate2Failure_NoNode() {
+        new Create2CB(zk).verifyCreateFailure_NoNode();
+    }
+
+
+    @Test
+    public void testAsyncCreate2Failure_NoChildForEphemeral() {
+        new Create2CB(zk).verifyCreateFailure_NoChildForEphemeral();
+    }
+
+    @Test
     public void testAsyncDelete() {
         new VoidCB(zk).verifyDelete();
     }
@@ -97,6 +132,16 @@ public class AsyncOpsTest extends ClientBase {
     @Test
     public void testAsyncDeleteFailure_NoNode() {
         new VoidCB(zk).verifyDeleteFailure_NoNode();
+    }
+
+    @Test
+    public void testAsyncDeleteFailure_BadVersion() {
+        new VoidCB(zk).verifyDeleteFailure_BadVersion();
+    }
+
+    @Test
+    public void testAsyncDeleteFailure_NotEmpty() {
+        new VoidCB(zk).verifyDeleteFailure_NotEmpty();
     }
 
     @Test
@@ -115,6 +160,11 @@ public class AsyncOpsTest extends ClientBase {
     }
 
     @Test
+    public void testAsyncSetACLFailure_BadVersion() {
+        new StatCB(zk).verifySetACLFailure_BadVersion();
+    }
+
+    @Test
     public void testAsyncSetData() {
         new StatCB(zk).verifySetData();
     }
@@ -122,6 +172,11 @@ public class AsyncOpsTest extends ClientBase {
     @Test
     public void testAsyncSetDataFailure_NoNode() {
         new StatCB(zk).verifySetDataFailure_NoNode();
+    }
+
+    @Test
+    public void testAsyncSetDataFailure_BadVersion() {
+        new StatCB(zk).verifySetDataFailure_BadVersion();
     }
 
     @Test
@@ -137,6 +192,11 @@ public class AsyncOpsTest extends ClientBase {
     @Test
     public void testAsyncGetACL() {
         new ACLCB(zk).verifyGetACL();
+    }
+
+    @Test
+    public void testAsyncGetACLFailure_NoNode() {
+        new ACLCB(zk).verifyGetACLFailure_NoNode();
     }
 
     @Test
@@ -161,7 +221,7 @@ public class AsyncOpsTest extends ClientBase {
 
     @Test
     public void testAsyncGetChildren2Empty() {
-        new ChildrenCB(zk).verifyGetChildrenEmpty();
+        new Children2CB(zk).verifyGetChildrenEmpty();
     }
 
     @Test
@@ -187,5 +247,25 @@ public class AsyncOpsTest extends ClientBase {
     @Test
     public void testAsyncGetDataFailure_NoNode() {
         new DataCB(zk).verifyGetDataFailure_NoNode();
+    }
+
+    @Test
+    public void testAsyncMulti() {
+        new MultiCB(zk).verifyMulti();
+    }
+
+    @Test
+    public void testAsyncMultiFailure_AllErrorResult() {
+        new MultiCB(zk).verifyMultiFailure_AllErrorResult();
+    }
+
+    @Test
+    public void testAsyncMultiFailure_NoSideEffect() throws Exception{
+        new MultiCB(zk).verifyMultiFailure_NoSideEffect();
+    }
+
+    @Test
+    public void testAsyncMultiSequential_NoSideEffect() throws Exception{
+        new MultiCB(zk).verifyMultiSequential_NoSideEffect();
     }
 }

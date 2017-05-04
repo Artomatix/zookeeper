@@ -52,10 +52,11 @@ import java.io.FileNotFoundException;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class TxnLogSource implements LogSource {
-    private static final Logger LOG = Logger.getLogger(TxnLogSource.class);
+    private static final Logger LOG = LoggerFactory.getLogger(TxnLogSource.class);
 
     private LogSkipList skiplist = null;
     private static final int skipN = 10000;
@@ -179,9 +180,8 @@ public class TxnLogSource implements LogSource {
 		    throw new IOException("CRC doesn't match " + crcValue +
 					  " vs " + crc.getValue());
 		}
-		InputArchive iab = BinaryInputArchive.getArchive(new ByteArrayInputStream(bytes));
 		TxnHeader hdr = new TxnHeader();
-		Record r = SerializeUtils.deserializeTxn(iab, hdr);
+		Record r = SerializeUtils.deserializeTxn(bytes, hdr);
 
 		switch (hdr.getType()) {
 		case OpCode.createSession: {
@@ -327,9 +327,8 @@ public class TxnLogSource implements LogSource {
 		if (logStream.readByte("EOR") != 'B') {
 		    throw new EOFException("Last transaction was partial.");
 		}
-		InputArchive iab = BinaryInputArchive.getArchive(new ByteArrayInputStream(bytes));
 		TxnHeader hdr = new TxnHeader();
-		Record r = SerializeUtils.deserializeTxn(iab, hdr);
+		Record r = SerializeUtils.deserializeTxn(bytes, hdr);
 		
 		if (starttime == 0) {
 		    starttime = hdr.getTime();

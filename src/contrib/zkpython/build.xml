@@ -57,7 +57,7 @@
       </exec>
     </target>
 
-    <target name="compile">
+    <target name="compile" depends="ivy-retrieve">
       <exec executable="python" failonerror="true">
         <arg value="${python.src.dir}/setup.py"/>
         <arg value="build"/>
@@ -94,5 +94,18 @@
         </fileset>
       </copy>
     </target>
+
+    <target name="bin-package" depends="compile, package" unless="skip.contrib">
+    </target>
+
+    <target name="tar-bin" depends="init, compile, bin-package" unless="skip.contrib">
+      <exec executable="python" failonerror="true" dir="${build.dir}">
+        <arg value="${python.src.dir}/setup.py"/>
+        <arg value="build"/>
+        <arg value="--build-base=${build.dir}"/>
+        <arg value="bdist_dumb"/>
+      </exec>
+    </target>
+
 </project>
 

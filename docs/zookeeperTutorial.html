@@ -3,7 +3,7 @@
 <head>
 <META http-equiv="Content-Type" content="text/html; charset=UTF-8">
 <meta content="Apache Forrest" name="Generator">
-<meta name="Forrest-version" content="0.8">
+<meta name="Forrest-version" content="0.9">
 <meta name="Forrest-skin-name" content="pelt">
 <title>Programming with ZooKeeper - A basic tutorial</title>
 <link type="text/css" href="skin/basic.css" rel="stylesheet">
@@ -20,7 +20,7 @@
     |breadtrail
     +-->
 <div class="breadtrail">
-<a href="http://www.apache.org/">Apache</a> &gt; <a href="http://hadoop.apache.org/">Hadoop</a> &gt; <a href="http://hadoop.apache.org/zookeeper/">ZooKeeper</a><script src="skin/breadcrumbs.js" language="JavaScript" type="text/javascript"></script>
+<a href="http://www.apache.org/">Apache</a> &gt; <a href="http://zookeeper.apache.org/">ZooKeeper</a> &gt; <a href="http://zookeeper.apache.org/">ZooKeeper</a><script src="skin/breadcrumbs.js" language="JavaScript" type="text/javascript"></script>
 </div>
 <!--+
     |header
@@ -39,7 +39,7 @@
     |start Project Logo
     +-->
 <div class="projectlogo">
-<a href="http://hadoop.apache.org/zookeeper/"><img class="logoImage" alt="ZooKeeper" src="images/zookeeper_small.gif" title="ZooKeeper: distributed coordination"></a>
+<a href="http://zookeeper.apache.org/"><img class="logoImage" alt="ZooKeeper" src="images/zookeeper_small.gif" title="ZooKeeper: distributed coordination"></a>
 </div>
 <!--+
     |end Project Logo
@@ -49,7 +49,7 @@
     +-->
 <div class="searchbox">
 <form action="http://www.google.com/search" method="get" class="roundtopsmall">
-<input value="hadoop.apache.org" name="sitesearch" type="hidden"><input onFocus="getBlank (this, 'Search the site with google');" size="25" name="q" id="query" type="text" value="Search the site with google">&nbsp; 
+<input value="zookeeper.apache.org" name="sitesearch" type="hidden"><input onFocus="getBlank (this, 'Search the site with google');" size="25" name="q" id="query" type="text" value="Search the site with google">&nbsp; 
                     <input name="Search" value="Search" type="submit">
 </form>
 </div>
@@ -61,13 +61,13 @@
     +-->
 <ul id="tabs">
 <li>
-<a class="unselected" href="http://hadoop.apache.org/zookeeper/">Project</a>
+<a class="unselected" href="http://zookeeper.apache.org/">Project</a>
 </li>
 <li>
-<a class="unselected" href="http://wiki.apache.org/hadoop/ZooKeeper">Wiki</a>
+<a class="unselected" href="https://cwiki.apache.org/confluence/display/ZOOKEEPER/">Wiki</a>
 </li>
 <li class="current">
-<a class="selected" href="index.html">ZooKeeper 3.4 Documentation</a>
+<a class="selected" href="index.html">ZooKeeper 3.6 Documentation</a>
 </li>
 </ul>
 <!--+
@@ -135,23 +135,8 @@ document.write("Last Published: " + document.lastModified);
 <a href="recipes.html">Recipes</a>
 </div>
 </div>
-<div onclick="SwitchMenu('menu_1.3', 'skin/')" id="menu_1.3Title" class="menutitle">BookKeeper</div>
+<div onclick="SwitchMenu('menu_1.3', 'skin/')" id="menu_1.3Title" class="menutitle">Admin &amp; Ops</div>
 <div id="menu_1.3" class="menuitemgroup">
-<div class="menuitem">
-<a href="bookkeeperStarted.html">Getting started</a>
-</div>
-<div class="menuitem">
-<a href="bookkeeperOverview.html">Overview</a>
-</div>
-<div class="menuitem">
-<a href="bookkeeperConfig.html">Setup guide</a>
-</div>
-<div class="menuitem">
-<a href="bookkeeperProgrammer.html">Programmer's guide</a>
-</div>
-</div>
-<div onclick="SwitchMenu('menu_1.4', 'skin/')" id="menu_1.4Title" class="menutitle">Admin &amp; Ops</div>
-<div id="menu_1.4" class="menuitemgroup">
 <div class="menuitem">
 <a href="zookeeperAdmin.html">Administrator's Guide</a>
 </div>
@@ -164,23 +149,26 @@ document.write("Last Published: " + document.lastModified);
 <div class="menuitem">
 <a href="zookeeperObservers.html">Observers Guide</a>
 </div>
+<div class="menuitem">
+<a href="zookeeperReconfig.html">Dynamic Reconfiguration</a>
 </div>
-<div onclick="SwitchMenu('menu_1.5', 'skin/')" id="menu_1.5Title" class="menutitle">Contributor</div>
-<div id="menu_1.5" class="menuitemgroup">
+</div>
+<div onclick="SwitchMenu('menu_1.4', 'skin/')" id="menu_1.4Title" class="menutitle">Contributor</div>
+<div id="menu_1.4" class="menuitemgroup">
 <div class="menuitem">
 <a href="zookeeperInternals.html">ZooKeeper Internals</a>
 </div>
 </div>
-<div onclick="SwitchMenu('menu_1.6', 'skin/')" id="menu_1.6Title" class="menutitle">Miscellaneous</div>
-<div id="menu_1.6" class="menuitemgroup">
+<div onclick="SwitchMenu('menu_1.5', 'skin/')" id="menu_1.5Title" class="menutitle">Miscellaneous</div>
+<div id="menu_1.5" class="menuitemgroup">
 <div class="menuitem">
-<a href="http://wiki.apache.org/hadoop/ZooKeeper">Wiki</a>
+<a href="https://cwiki.apache.org/confluence/display/ZOOKEEPER">Wiki</a>
 </div>
 <div class="menuitem">
-<a href="http://wiki.apache.org/hadoop/ZooKeeper/FAQ">FAQ</a>
+<a href="https://cwiki.apache.org/confluence/display/ZOOKEEPER/FAQ">FAQ</a>
 </div>
 <div class="menuitem">
-<a href="http://hadoop.apache.org/zookeeper/mailing_lists.html">Mailing Lists</a>
+<a href="http://zookeeper.apache.org/mailing_lists.html">Mailing Lists</a>
 </div>
 </div>
 <div id="credit"></div>
@@ -203,6 +191,7 @@ document.write("Last Published: " + document.lastModified);
         PDF</a>
 </div>
 <h1>Programming with ZooKeeper - A basic tutorial</h1>
+<div id="front-matter">
 <div id="minitoc-area">
 <ul class="minitoc">
 <li>
@@ -219,12 +208,13 @@ document.write("Last Published: " + document.lastModified);
 </li>
 </ul>
 </div>
+</div>
   
 
   
 
   
-<a name="N10009"></a><a name="ch_Introduction"></a>
+<a name="ch_Introduction"></a>
 <h2 class="h3">Introduction</h2>
 <div class="section">
 <p>In this tutorial, we show simple implementations of barriers and 
@@ -275,7 +265,7 @@ This point becomes clear once we go over the examples.
 </div>
    
  
-<a name="N1001F"></a><a name="sc_barriers"></a>
+<a name="sc_barriers"></a>
 <h2 class="h3">Barriers</h2>
 <div class="section">
 <p>
@@ -383,14 +373,14 @@ a boolean flag that enables the process to set a watch. In the code the flag is 
 </pre>
 <p>
 Note that enter() throws both KeeperException and InterruptedException, so it is 
-the reponsability of the application to catch and handle such exceptions.</p>
+the responsibility of the application to catch and handle such exceptions.</p>
 <p>
 Once the computation is finished, a process calls leave() to leave the barrier. 
 First it deletes its corresponding node, and then it gets the children of the root 
 node. If there is at least one child, then it waits for a notification (obs: note 
 that the second parameter of the call to getChildren() is true, meaning that 
 ZooKeeper has to set a watch on the the root node). Upon reception of a notification, 
-it checks once more whether the root node has any child.</p>
+it checks once more whether the root node has any children.</p>
 <pre class="code">
         /**
          * Wait until all reach barrier
@@ -417,11 +407,11 @@ it checks once more whether the root node has any child.</p>
 </pre>
 </div>
 
-<a name="N10051"></a><a name="sc_producerConsumerQueues"></a>
+<a name="sc_producerConsumerQueues"></a>
 <h2 class="h3">Producer-Consumer Queues</h2>
 <div class="section">
 <p>
-A producer-consumer queue is a distributed data estructure thata group of processes 
+A producer-consumer queue is a distributed data structure that groups of processes 
 use to generate and consume items. Producer processes create new elements and add 
 them to the queue. Consumer processes remove elements from the list, and process them. 
 In this implementation, the elements are simple integers. The queue is represented 
@@ -544,7 +534,7 @@ from each one.</p>
 </pre>
 </div>
 
-<a name="N1006F"></a><a name="sc_sourceListing"></a>
+<a name="sc_sourceListing"></a>
 <h2 class="h3">Complete Source Listing</h2>
 <div class="section">
 <div class="note example">
@@ -882,7 +872,7 @@ document.write("Last Published: " + document.lastModified);
 </div>
 <div class="copyright">
         Copyright &copy;
-         2008 <a href="http://www.apache.org/licenses/">The Apache Software Foundation.</a>
+          <a href="http://www.apache.org/licenses/">The Apache Software Foundation.</a>
 </div>
 <!--+
     |end bottomstrip

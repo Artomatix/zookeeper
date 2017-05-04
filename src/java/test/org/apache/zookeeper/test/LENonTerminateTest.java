@@ -25,18 +25,19 @@ import java.net.DatagramSocket;
 import java.net.InetSocketAddress;
 import java.net.SocketException;
 import java.nio.ByteBuffer;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.PortAssignment;
 import org.apache.zookeeper.ZKTestCase;
 import org.apache.zookeeper.server.ServerCnxnFactory;
 import org.apache.zookeeper.server.quorum.Election;
+import org.apache.zookeeper.server.quorum.FLELostMessageTest;
 import org.apache.zookeeper.server.quorum.LeaderElection;
 import org.apache.zookeeper.server.quorum.QuorumPeer;
 import org.apache.zookeeper.server.quorum.Vote;
@@ -48,23 +49,24 @@ import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
 
+@SuppressWarnings("deprecation")
 public class LENonTerminateTest extends ZKTestCase {
-    public class MockLeaderElection extends LeaderElection {
+    public static class MockLeaderElection extends LeaderElection {
         public MockLeaderElection(QuorumPeer self) {
-            super(self);            
+            super(self);
         }
 
         /**
          * Temporary for 3.3.0 - we want to ensure that a round of voting happens
          * before any of the peers update their votes. The easiest way to do that
-         * is to add a latch that all wait on after counting their votes. 
-         * 
+         * is to add a latch that all wait on after counting their votes.
+         *
          * In 3.4.0 we intend to make this class more testable, and therefore
          * there should be much less duplicated code.
-         * 
+         *
          * JMX bean method calls are removed to reduce noise.
          */
-        public Vote lookForLeader() throws InterruptedException {            
+        public Vote lookForLeader() throws InterruptedException {
             self.setCurrentVote(new Vote(self.getId(),
                     self.getLastLoggedZxid()));
             // We are going to look for a leader by casting a vote for ourself
@@ -85,17 +87,17 @@ public class LENonTerminateTest extends ZKTestCase {
                     requestBytes.length);
             DatagramPacket responsePacket = new DatagramPacket(responseBytes,
                     responseBytes.length);
-            HashMap<InetSocketAddress, Vote> votes =
-                new HashMap<InetSocketAddress, Vote>(self.getVotingView().size());
             int xid = epochGen.nextInt();
             while (self.isRunning()) {
-                votes.clear();
+                HashMap<InetSocketAddress, Vote> votes =
+                    new HashMap<InetSocketAddress, Vote>(self.getVotingView().size());
+
                 requestBuffer.clear();
                 requestBuffer.putInt(xid);
                 requestPacket.setLength(4);
                 HashSet<Long> heardFrom = new HashSet<Long>();
                 for (QuorumServer server :
-                    (Collection<QuorumServer>)self.getVotingView().values())
+                    self.getVotingView().values())
                 {
                     LOG.info("Server address: " + server.addr);
                     try {
@@ -145,7 +147,7 @@ public class LENonTerminateTest extends ZKTestCase {
                 }
 
                 ElectionResult result = countVotes(votes, heardFrom);
-                
+
                 /**
                  * This is the only difference from LeaderElection - wait for
                  * this latch on the first time through this method. This ensures
@@ -156,16 +158,16 @@ public class LENonTerminateTest extends ZKTestCase {
                 latch.countDown();
                 Assert.assertTrue("Thread timed out waiting for latch",
                         latch.await(10000, TimeUnit.MILLISECONDS));
-                
+
                 // ZOOKEEPER-569:
-                // If no votes are received for live peers, reset to voting 
-                // for ourselves as otherwise we may hang on to a vote 
-                // for a dead peer                 
-                if (votes.size() == 0) {                    
+                // If no votes are received for live peers, reset to voting
+                // for ourselves as otherwise we may hang on to a vote
+                // for a dead peer
+                if (result.numValidVotes == 0) {
                     self.setCurrentVote(new Vote(self.getId(),
                             self.getLastLoggedZxid()));
                 } else {
-                    if (result.winner.id >= 0) {
+                    if (result.winner.getId() >= 0) {
                         self.setCurrentVote(result.vote);
                         // To do: this doesn't use a quorum verifier
                         if (result.winningCount > (self.getVotingView().size() / 2)) {
@@ -176,12 +178,12 @@ public class LENonTerminateTest extends ZKTestCase {
                             /*
                              * We want to make sure we implement the state machine
                              * correctly. If we are a PARTICIPANT, once a leader
-                             * is elected we can move either to LEADING or 
+                             * is elected we can move either to LEADING or
                              * FOLLOWING. However if we are an OBSERVER, it is an
                              * error to be elected as a Leader.
                              */
                             if (self.getLearnerType() == LearnerType.OBSERVER) {
-                                if (current.id == self.getId()) {
+                                if (current.getId() == self.getId()) {
                                     // This should never happen!
                                     LOG.error("OBSERVER elected as leader!");
                                     Thread.sleep(100);
@@ -192,11 +194,11 @@ public class LENonTerminateTest extends ZKTestCase {
                                     return current;
                                 }
                             } else {
-                                self.setPeerState((current.id == self.getId())
+                                self.setPeerState((current.getId() == self.getId())
                                         ? ServerState.LEADING: ServerState.FOLLOWING);
                                 if (self.getPeerState() == ServerState.FOLLOWING) {
                                     Thread.sleep(100);
-                                }                            
+                                }
                                 return current;
                             }
                         }
@@ -205,35 +207,35 @@ public class LENonTerminateTest extends ZKTestCase {
                 Thread.sleep(1000);
             }
             return null;
-        }         
+        }
     }
-    
-    public class MockQuorumPeer extends QuorumPeer {
+
+    public static class MockQuorumPeer extends QuorumPeer {
         public MockQuorumPeer(Map<Long,QuorumServer> quorumPeers, File snapDir,
                 File logDir, int clientPort, int electionAlg,
                 long myid, int tickTime, int initLimit, int syncLimit)
         throws IOException
         {
             super(quorumPeers, snapDir, logDir, electionAlg,
-                    myid,tickTime, initLimit,syncLimit,
+                    myid,tickTime, initLimit,syncLimit, false,
                     ServerCnxnFactory.createFactory(clientPort, -1),
-                    new QuorumMaj(countParticipants(quorumPeers)));
+                    new QuorumMaj(quorumPeers));
         }
-        
+
         protected  Election createElectionAlgorithm(int electionAlgorithm){
             LOG.info("Returning mocked leader election");
             return new MockLeaderElection(this);
         }
     }
-    
-    
-    protected static final Logger LOG = Logger.getLogger(FLELostMessageTest.class);
-    
+
+
+    protected static final Logger LOG = LoggerFactory.getLogger(FLELostMessageTest.class);
+
     int count;
     HashMap<Long,QuorumServer> peers;
     File tmpdir[];
-    int port[];   
-   
+    int port[];
+
     @Before
     public void setUp() throws Exception {
         count = 3;
@@ -246,10 +248,9 @@ public class LENonTerminateTest extends ZKTestCase {
     static final CountDownLatch latch = new CountDownLatch(2);
     static final CountDownLatch mockLatch = new CountDownLatch(1);
 
-    class LEThread extends Thread {
-        int i;
-        QuorumPeer peer;
-        
+    private static class LEThread extends Thread {
+        private int i;
+        private QuorumPeer peer;
 
         LEThread(QuorumPeer peer, int i) {
             this.i = i;
@@ -258,7 +259,7 @@ public class LENonTerminateTest extends ZKTestCase {
 
         }
 
-        public void run(){            
+        public void run(){
             try{
                 Vote v = null;
                 peer.setPeerState(ServerState.LOOKING);
@@ -267,7 +268,7 @@ public class LENonTerminateTest extends ZKTestCase {
 
                 if (v == null){
                     Assert.fail("Thread " + i + " got a null vote");
-                }                                
+                }
 
                 /*
                  * A real zookeeper would take care of setting the current vote. Here
@@ -275,14 +276,14 @@ public class LENonTerminateTest extends ZKTestCase {
                  */
                 peer.setCurrentVote(v);
 
-                LOG.info("Finished election: " + i + ", " + v.id);                    
+                LOG.info("Finished election: " + i + ", " + v.getId());
             } catch (Exception e) {
                 e.printStackTrace();
             }
             LOG.info("Joining");
         }
     }
-    
+
     /**
      * This tests ZK-569.
      * With three peers A, B and C, the following could happen:
@@ -293,7 +294,7 @@ public class LENonTerminateTest extends ZKTestCase {
      * resetting votes to themselves if the set of votes for live peers is null.
      */
     @Test
-    public void testNonTermination() throws Exception {                
+    public void testNonTermination() throws Exception {
         LOG.info("TestNonTermination: " + getTestName()+ ", " + count);
         for(int i = 0; i < count; i++) {
             int clientport = PortAssignment.unique();
@@ -304,32 +305,32 @@ public class LENonTerminateTest extends ZKTestCase {
             tmpdir[i] = ClientBase.createTmpDir();
             port[i] = clientport;
         }
-        
+
         /*
-         * peer1 and peer2 are A and B in the above example. 
+         * peer1 and peer2 are A and B in the above example.
          */
         QuorumPeer peer1 = new MockQuorumPeer(peers, tmpdir[0], tmpdir[0], port[0], 0, 0, 2, 2, 2);
         peer1.startLeaderElection();
         LEThread thread1 = new LEThread(peer1, 0);
-        
+
         QuorumPeer peer2 = new MockQuorumPeer(peers, tmpdir[1], tmpdir[1], port[1], 0, 1, 2, 2, 2);
-        peer2.startLeaderElection();        
+        peer2.startLeaderElection();
         LEThread thread2 = new LEThread(peer2, 1);
-                            
+
         /*
          * Start mock server.
          */
-        Thread thread3 = new Thread() { 
+        Thread thread3 = new Thread() {
             public void run() {
                 try {
                     mockServer();
                 } catch (Exception e) {
-                    LOG.error(e);
+                    LOG.error("exception", e);
                     Assert.fail("Exception when running mocked server " + e);
                 }
             }
-        };        
-        
+        };
+
         thread3.start();
         Assert.assertTrue("mockServer did not start in 5s",
                 mockLatch.await(5000, TimeUnit.MILLISECONDS));
@@ -345,12 +346,12 @@ public class LENonTerminateTest extends ZKTestCase {
             Assert.fail("Threads didn't join");
         }
     }
-     
+
     /**
      * MockServer plays the role of peer C. Respond to two requests for votes
-     * with vote for self and then Assert.fail. 
+     * with vote for self and then Assert.fail.
      */
-    void mockServer() throws InterruptedException, IOException {          
+    void mockServer() throws InterruptedException, IOException {
         byte b[] = new byte[36];
         ByteBuffer responseBuffer = ByteBuffer.wrap(b);
         DatagramPacket packet = new DatagramPacket(b, b.length);
@@ -367,11 +368,11 @@ public class LENonTerminateTest extends ZKTestCase {
             responseBuffer.clear();
             responseBuffer.getInt(); // Skip the xid
             responseBuffer.putLong(2);
-            
-            responseBuffer.putLong(current.id);
-            responseBuffer.putLong(current.zxid);
+
+            responseBuffer.putLong(current.getId());
+            responseBuffer.putLong(current.getZxid());
             packet.setData(b);
             udpSocket.send(packet);
         }
-    }    
+    }
 }

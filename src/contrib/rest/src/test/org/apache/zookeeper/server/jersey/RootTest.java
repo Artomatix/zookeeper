@@ -22,27 +22,26 @@ import java.util.Arrays;
 
 import javax.ws.rs.core.MediaType;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.server.jersey.jaxb.ZPath;
+import org.junit.Assert;
 import org.junit.Test;
 
 import com.sun.jersey.api.client.ClientResponse;
 import com.sun.jersey.api.client.WebResource;
 import com.sun.jersey.api.client.WebResource.Builder;
 
-
 /**
  * Test stand-alone server.
  *
  */
 public class RootTest extends Base {
-    protected static final Logger LOG = Logger.getLogger(RootTest.class);
+    protected static final Logger LOG = LoggerFactory.getLogger(RootTest.class);
 
     @Test
     public void testCreate() throws Exception {
-        LOG.info("STARTING " + getName());
-        
         String path = "/";
         String name = "roottest-create";
         byte[] data = "foo".getBytes();
@@ -53,15 +52,15 @@ public class RootTest extends Base {
 
         ClientResponse cr;
         cr = builder.post(ClientResponse.class, data);
-        assertEquals(ClientResponse.Status.CREATED, cr.getClientResponseStatus());
+        Assert.assertEquals(ClientResponse.Status.CREATED, cr.getClientResponseStatus());
 
         ZPath zpath = cr.getEntity(ZPath.class);
-        assertEquals(new ZPath(path + name), zpath);
-        assertEquals(znodesr.path(path).toString(), zpath.uri);
+        Assert.assertEquals(new ZPath(path + name), zpath);
+        Assert.assertEquals(znodesr.path(path).toString(), zpath.uri);
 
         // use out-of-band method to verify
         byte[] rdata = zk.getData(zpath.path, false, new Stat());
-        assertTrue(new String(rdata) + " == " + new String(data),
+        Assert.assertTrue(new String(rdata) + " == " + new String(data),
                 Arrays.equals(rdata, data));
     }
 }

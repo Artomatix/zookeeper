@@ -23,8 +23,10 @@ import java.util.Collection;
 
 import javax.ws.rs.core.MediaType;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.server.jersey.jaxb.ZStat;
+import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -39,7 +41,7 @@ import com.sun.jersey.api.client.ClientResponse;
  */
 @RunWith(Parameterized.class)
 public class GetTest extends Base {
-    protected static final Logger LOG = Logger.getLogger(GetTest.class);
+    protected static final Logger LOG = LoggerFactory.getLogger(GetTest.class);
 
     private String accept;
     private String path;
@@ -96,8 +98,6 @@ public class GetTest extends Base {
 
     @Test
     public void testGet() throws Exception {
-        LOG.info("STARTING " + getName());
-
         if (expectedStat != null) {
             if (expectedStat.data64 != null || expectedStat.dataUtf8 == null) {
                 zk.setData(expectedStat.path, expectedStat.data64, -1);
@@ -109,14 +109,14 @@ public class GetTest extends Base {
 
         ClientResponse cr = znodesr.path(path).queryParam("dataformat", encoding)
             .accept(accept).get(ClientResponse.class);
-        assertEquals(expectedStatus, cr.getClientResponseStatus());
+        Assert.assertEquals(expectedStatus, cr.getClientResponseStatus());
 
         if (expectedStat == null) {
             return;
         }
 
         ZStat zstat = cr.getEntity(ZStat.class);
-        assertEquals(expectedStat, zstat);
-        assertEquals(znodesr.path(path).toString(), zstat.uri);
+        Assert.assertEquals(expectedStat, zstat);
+        Assert.assertEquals(znodesr.path(path).toString(), zstat.uri);
     }
 }

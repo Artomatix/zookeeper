@@ -18,8 +18,9 @@
 
 package org.apache.zookeeper.server;
 
-import org.apache.log4j.Logger;
-
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.apache.zookeeper.server.quorum.LearnerHandler;
 import org.apache.zookeeper.server.quorum.QuorumPacket;
 
 /**
@@ -51,17 +52,17 @@ public class ZooTrace {
             | SERVER_PACKET_TRACE_MASK | SESSION_TRACE_MASK
             | WARNING_TRACE_MASK;
 
-    public static long getTextTraceLevel() {
+    public static synchronized long getTextTraceLevel() {
         return traceMask;
     }
 
-    public static void setTextTraceLevel(long mask) {
+    public static synchronized void setTextTraceLevel(long mask) {
         traceMask = mask;
-        Logger LOG = Logger.getLogger(ZooTrace.class);
+        final Logger LOG = LoggerFactory.getLogger(ZooTrace.class);
         LOG.info("Set text trace mask to 0x" + Long.toHexString(mask));
     }
 
-    public static boolean isTraceEnabled(Logger log, long mask) {
+    public static synchronized boolean isTraceEnabled(Logger log, long mask) {
         return log.isTraceEnabled() && (mask & traceMask) != 0;
     }
 
@@ -74,12 +75,10 @@ public class ZooTrace {
     static public void logQuorumPacket(Logger log, long mask,
             char direction, QuorumPacket qp)
     {
-        return;
-
-        // if (isTraceEnabled(log, mask)) {
-        // logTraceMessage(LOG, mask, direction + " "
-        // + FollowerHandler.packetToString(qp));
-        // }
+        if (isTraceEnabled(log, mask)) { 
+            logTraceMessage(log, mask, direction +
+                    " " + LearnerHandler.packetToString(qp));
+         }
     }
 
     static public void logRequest(Logger log, long mask,

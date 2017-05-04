@@ -23,12 +23,14 @@ import java.util.Collection;
 
 import javax.ws.rs.core.MediaType;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooDefs.Ids;
 import org.apache.zookeeper.data.Stat;
+import org.junit.Assert;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
@@ -43,7 +45,7 @@ import com.sun.jersey.api.client.ClientResponse;
  */
 @RunWith(Parameterized.class)
 public class DeleteTest extends Base {
-    protected static final Logger LOG = Logger.getLogger(DeleteTest.class);
+    protected static final Logger LOG = LoggerFactory.getLogger(DeleteTest.class);
 
     private String zpath;
     private ClientResponse.Status expectedStatus;
@@ -77,16 +79,15 @@ public class DeleteTest extends Base {
 
         ClientResponse cr = znodesr.path(zpath).accept(type).type(type)
             .delete(ClientResponse.class);
-        assertEquals(expectedStatus, cr.getClientResponseStatus());
+        Assert.assertEquals(expectedStatus, cr.getClientResponseStatus());
 
         // use out-of-band method to verify
         Stat stat = zk.exists(zpath, false);
-        assertNull(stat);
+        Assert.assertNull(stat);
     }
 
     @Test
     public void testDelete() throws Exception {
-        LOG.info("STARTING " + getName());
         verify(MediaType.APPLICATION_OCTET_STREAM);
         verify(MediaType.APPLICATION_JSON);
         verify(MediaType.APPLICATION_XML);

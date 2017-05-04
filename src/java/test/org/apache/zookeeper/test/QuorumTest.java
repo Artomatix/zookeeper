@@ -19,37 +19,43 @@
 package org.apache.zookeeper.test;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
-import org.apache.log4j.Logger;
 import org.apache.zookeeper.AsyncCallback;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.Op;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.Watcher.Event.KeeperState;
+import org.apache.zookeeper.ZKTestCase;
 import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.ZooDefs.Ids;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.data.Stat;
 import org.apache.zookeeper.server.quorum.Leader;
 import org.apache.zookeeper.server.quorum.LearnerHandler;
+import org.apache.zookeeper.test.ClientBase.CountdownWatcher;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-public class QuorumTest extends QuorumBase {
-    private static final Logger LOG = Logger.getLogger(QuorumTest.class);
+public class QuorumTest extends ZKTestCase {
+    private static final Logger LOG = LoggerFactory.getLogger(QuorumTest.class);
     public static final long CONNECTION_TIMEOUT = ClientTest.CONNECTION_TIMEOUT;
 
     private final QuorumBase qb = new QuorumBase();
     private final ClientTest ct = new ClientTest();
+    private QuorumUtil qu;
 
     @Before
-    @Override
     public void setUp() throws Exception {
         qb.setUp();
         ct.hostPort = qb.hostPort;
@@ -57,10 +63,12 @@ public class QuorumTest extends QuorumBase {
     }
 
     @After
-    @Override
     public void tearDown() throws Exception {
         ct.tearDownAll();
         qb.tearDown();
+        if (qu != null) {
+            qu.tearDown();
+        }
     }
 
     @Test
@@ -146,8 +154,7 @@ public class QuorumTest extends QuorumBase {
                 }
             }, null);
         }
-        ArrayList<LearnerHandler> fhs = new ArrayList<LearnerHandler>(leader.forwardingFollowers);
-        for(LearnerHandler f: fhs) {
+        for(LearnerHandler f : leader.getForwardingFollowers()) {
             f.getSocket().shutdownInput();
         }
         for(int i = 0; i < 5000; i++) {
@@ -186,7 +193,6 @@ public class QuorumTest extends QuorumBase {
      * @throws KeeperException
      */
     @Test
-    @Ignore
     public void testSessionMoved() throws Exception {
         String hostPorts[] = qb.hostPort.split(",");
         DisconnectableZooKeeper zk = new DisconnectableZooKeeper(hostPorts[0],
@@ -206,6 +212,20 @@ public class QuorumTest extends QuorumBase {
                     zk.getSessionId(),
                     zk.getSessionPasswd());
             zknew.setData("/", new byte[1], -1);
+            final int result[] = new int[1];
+            result[0] = Integer.MAX_VALUE;
+            zknew.sync("/", new AsyncCallback.VoidCallback() {
+                    public void processResult(int rc, String path, Object ctx) {
+                        synchronized(result) { result[0] = rc; result.notify(); }
+                    }
+                }, null);
+            synchronized(result) {
+                if(result[0] == Integer.MAX_VALUE) {
+                    result.wait(5000);
+                }
+            }
+            LOG.info(hostPorts[(i+1)%hostPorts.length] + " Sync returned " + result[0]);
+            Assert.assertTrue(result[0] == KeeperException.Code.OK.intValue());
             try {
                 zk.setData("/", new byte[1], -1);
                 Assert.fail("Should have lost the connection");
@@ -280,33 +300,32 @@ public class QuorumTest extends QuorumBase {
      * */
     @Test
     public void testFollowersStartAfterLeader() throws Exception {
-        QuorumUtil qu = new QuorumUtil(1);
+        qu = new QuorumUtil(1);
         CountdownWatcher watcher = new CountdownWatcher();
         qu.startQuorum();
-        
+
         int index = 1;
         while(qu.getPeer(index).peer.leader == null)
             index++;
+
+        // break the quorum
+        qu.shutdown(index);
         
+        // try to reestablish the quorum
+        qu.start(index);
+        
+        // Connect the client after services are restarted (otherwise we would get
+        // SessionExpiredException as the previous local session was not persisted).
         ZooKeeper zk = new ZooKeeper(
                 "127.0.0.1:" + qu.getPeer((index == 1)?2:1).peer.getClientPort(),
                 ClientBase.CONNECTION_TIMEOUT, watcher);
-        watcher.waitForConnected(CONNECTION_TIMEOUT);
-        
-        // break the quorum
-        qu.shutdown(index);
 
-        // try to reestablish the quorum
-        qu.start(index);
-        Assert.assertTrue("quorum reestablishment failed",
-                QuorumBase.waitForServerUp(
-                        "127.0.0.1:" + qu.getPeer(2).clientPort,
-                        CONNECTION_TIMEOUT));
-        Thread.sleep(1000);
+        try{
+            watcher.waitForConnected(CONNECTION_TIMEOUT);      
+        } catch(TimeoutException e) {
+            Assert.fail("client could not connect to reestablished quorum: giving up after 30+ seconds.");
+        }
 
-        // zk should have reconnected already
-        zk.create("/test", "test".getBytes(), ZooDefs.Ids.OPEN_ACL_UNSAFE,
-                CreateMode.PERSISTENT);
         zk.close();
     }
 
@@ -331,33 +350,33 @@ public class QuorumTest extends QuorumBase {
      * 
      */
     @Test
-    public void testNoLogBeforeLeaderEstablishment () 
-    throws IOException, InterruptedException, KeeperException{
+    public void testNoLogBeforeLeaderEstablishment () throws Exception {
         final Semaphore sem = new Semaphore(0);
-                
-        QuorumUtil qu = new QuorumUtil(2);
+
+        qu = new QuorumUtil(2, 10);
         qu.startQuorum();
-                
-        
+
         int index = 1;
         while(qu.getPeer(index).peer.leader == null)
             index++;
-        
+
         Leader leader = qu.getPeer(index).peer.leader;
-        
+
         Assert.assertNotNull(leader);
-  
+
         /*
          * Reusing the index variable to select a follower to connect to
          */
         index = (index == 1) ? 2 : 1;
-        
-        ZooKeeper zk = new DisconnectableZooKeeper("127.0.0.1:" + qu.getPeer(index).peer.getClientPort(), 1000, new Watcher() {
-            public void process(WatchedEvent event) {
-        }});
+
+        ZooKeeper zk = new DisconnectableZooKeeper(
+                "127.0.0.1:" + qu.getPeer(index).peer.getClientPort(),
+                ClientBase.CONNECTION_TIMEOUT, new Watcher() {
+            public void process(WatchedEvent event) { }
+          });
 
         zk.create("/blah", new byte[0], ZooDefs.Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);      
-        
+
         for(int i = 0; i < 50000; i++) {
             zk.setData("/blah", new byte[0], -1, new AsyncCallback.StatCallback() {
                 public void processResult(int rc, String path, Object ctx,
@@ -371,7 +390,7 @@ public class QuorumTest extends QuorumBase {
                     }
                 }
             }, null);
-            
+
             if(i == 5000){
                 qu.shutdown(index);
                 LOG.info("Shutting down s1");
@@ -386,16 +405,53 @@ public class QuorumTest extends QuorumBase {
         }
 
         // Wait until all updates return
-        sem.tryAcquire(15000, TimeUnit.MILLISECONDS);
-        
+        sem.tryAcquire(15, TimeUnit.SECONDS);
+
         // Verify that server is following and has the same epoch as the leader
         Assert.assertTrue("Not following", qu.getPeer(index).peer.follower != null);
         long epochF = (qu.getPeer(index).peer.getActiveServer().getZxid() >> 32L);
         long epochL = (leader.getEpoch() >> 32L);
         Assert.assertTrue("Zxid: " + qu.getPeer(index).peer.getActiveServer().getZxid() + 
                 "Current epoch: " + epochF, epochF == epochL);
-        
+
+        zk.close();
     }
 
     // skip superhammer and clientcleanup as they are too expensive for quorum
+
+    /**
+     * Tests if a multiop submitted to a non-leader propagates to the leader properly
+     * (see ZOOKEEPER-1124).
+     * 
+     * The test works as follows. It has a client connect to a follower and submit a multiop
+     * to the follower. It then verifies that the multiop successfully gets committed by the leader.
+     *
+     * Without the fix in ZOOKEEPER-1124, this fails with a ConnectionLoss KeeperException.
+     */
+    @Test
+    public void testMultiToFollower() throws Exception {
+        qu = new QuorumUtil(1);
+        CountdownWatcher watcher = new CountdownWatcher();
+        qu.startQuorum();
+
+        int index = 1;
+        while(qu.getPeer(index).peer.leader == null)
+            index++;
+
+        ZooKeeper zk = new ZooKeeper(
+                "127.0.0.1:" + qu.getPeer((index == 1)?2:1).peer.getClientPort(),
+                ClientBase.CONNECTION_TIMEOUT, watcher);
+        watcher.waitForConnected(CONNECTION_TIMEOUT);
+
+        zk.multi(Arrays.asList(
+                Op.create("/multi0", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT),
+                Op.create("/multi1", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT),
+                Op.create("/multi2", new byte[0], Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT)
+                ));
+        zk.getData("/multi0", false, null);
+        zk.getData("/multi1", false, null);
+        zk.getData("/multi2", false, null);
+
+        zk.close();
+    }
 }

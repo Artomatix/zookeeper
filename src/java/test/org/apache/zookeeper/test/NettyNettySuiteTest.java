@@ -30,8 +30,9 @@ import org.junit.runners.Suite;
         ClientTest.class,
         FourLetterWordsTest.class,
         NullDataTest.class,
+        ReconfigTest.class,
         SessionTest.class,
         WatcherTest.class
-        })
+})
 public class NettyNettySuiteTest extends NettyNettySuiteBase {
 }

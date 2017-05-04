@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 # Licensed to the Apache Software Foundation (ASF) under one or more
 # contributor license agreements.  See the NOTICE file distributed with
@@ -25,17 +25,19 @@
 # relative to the canonical path of this script.
 #
 
-# Only follow symlinks if readlink supports it
-if readlink -f "$0" > /dev/null 2>&1
-then
-  ZOOBIN=`readlink -f "$0"`
+# use POSIX interface, symlink is followed automatically
+ZOOBIN="${BASH_SOURCE-$0}"
+ZOOBIN="$(dirname "${ZOOBIN}")"
+ZOOBINDIR="$(cd "${ZOOBIN}"; pwd)"
+
+if [ -e "$ZOOBIN/../libexec/zkEnv.sh" ]; then
+  . "$ZOOBINDIR"/../libexec/zkEnv.sh
 else
-  ZOOBIN="$0"
+  . "$ZOOBINDIR"/zkEnv.sh
 fi
-ZOOBINDIR=`dirname "$ZOOBIN"`
 
-. "$ZOOBINDIR"/zkEnv.sh
+ZOO_LOG_FILE=zookeeper-$USER-cli-$HOSTNAME.log
 
-java "-Dzookeeper.log.dir=${ZOO_LOG_DIR}" "-Dzookeeper.root.logger=${ZOO_LOG4J_PROP}" \
-     -cp "$CLASSPATH" $JVMFLAGS \
-     org.apache.zookeeper.ZooKeeperMain $@
+"$JAVA" "-Dzookeeper.log.dir=${ZOO_LOG_DIR}" "-Dzookeeper.root.logger=${ZOO_LOG4J_PROP}" "-Dzookeeper.log.file=${ZOO_LOG_FILE}" \
+     -cp "$CLASSPATH" $CLIENT_JVMFLAGS $JVMFLAGS \
+     org.apache.zookeeper.ZooKeeperMain "$@"

@@ -23,27 +23,30 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
-import org.apache.log4j.Logger;
-import org.apache.zookeeper.ClientCnxn;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.TestableZooKeeper;
 import org.apache.zookeeper.WatchedEvent;
-import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZooKeeper;
 import org.apache.zookeeper.AsyncCallback.StatCallback;
 import org.apache.zookeeper.AsyncCallback.VoidCallback;
 import org.apache.zookeeper.Watcher.Event;
 import org.apache.zookeeper.Watcher.Event.EventType;
 import org.apache.zookeeper.ZooDefs.Ids;
+import org.apache.zookeeper.client.ZKClientConfig;
 import org.apache.zookeeper.data.Stat;
 import org.junit.Assert;
+import org.junit.Before;
 import org.junit.Test;
 
 public class WatcherTest extends ClientBase {
-    protected static final Logger LOG = Logger.getLogger(WatcherTest.class);
+    protected static final Logger LOG = LoggerFactory.getLogger(WatcherTest.class);
 
-    private final class MyStatCallback implements StatCallback {
+    private long timeOfLastWatcherInvocation;
+
+    private final static class MyStatCallback implements StatCallback {
         int rc;
         public void processResult(int rc, String path, Object ctx, Stat stat) {
             ((int[])ctx)[0]++;
@@ -58,6 +61,7 @@ public class WatcherTest extends ClientBase {
         public void process(WatchedEvent event) {
             super.process(event);
             if (event.getType() != Event.EventType.None) {
+                timeOfLastWatcherInvocation = System.currentTimeMillis();
                 try {
                     events.put(event);
                 } catch (InterruptedException e) {
@@ -65,6 +69,14 @@ public class WatcherTest extends ClientBase {
                 }
             }
         }
+    }
+
+    @Before
+    public void setUp() throws Exception {
+        super.setUp();
+        // Reset to default value since some test cases set this to true.
+        // Needed for JDK7 since unit test can run is random order
+        System.setProperty(ZKClientConfig.DISABLE_AUTO_WATCH_RESET, "false");
     }
 
     /**
@@ -130,7 +142,7 @@ public class WatcherTest extends ClientBase {
     }
 
     @Test
-    public void testWatcherCount() 
+    public void testWatcherCount()
     throws IOException, InterruptedException, KeeperException {
         ZooKeeper zk1 = null, zk2 = null;
         try {
@@ -163,7 +175,6 @@ public class WatcherTest extends ClientBase {
     }
 
     final static int COUNT = 100;
-    boolean hasSeenDelete = true;
     /**
      * This test checks that watches for pending requests do not get triggered,
      * but watches set by previous requests do.
@@ -185,8 +196,7 @@ public class WatcherTest extends ClientBase {
            zk.exists("/test", watches[i], cbs[i], count);
        }
        zk.exists("/test", false);
-       zk.pauseCnxn(3000);
-       Thread.sleep(50);
+       Assert.assertTrue("Failed to pause the connection!", zk.pauseCnxn(3000));
        zk2.close();
        stopServer();
        watches[0].waitForDisconnected(60000);
@@ -198,7 +208,7 @@ public class WatcherTest extends ClientBase {
        startServer();
        watches[COUNT/2-1].waitForConnected(60000);
        Assert.assertEquals(null, zk.exists("/test", false));
-       Thread.sleep(10);
+       waitForAllWatchers();
        for(int i = 0; i < COUNT/2; i++) {
            Assert.assertEquals("For " + i, 1, watches[i].events.size());
        }
@@ -212,7 +222,19 @@ public class WatcherTest extends ClientBase {
        Assert.assertEquals(COUNT, count[0]);
        zk.close();
     }
-    
+
+    /**
+     * Wait until no watcher has been fired in the last second to ensure that all watches
+     * that are waiting to be fired have been fired
+     * @throws Exception
+     */
+    private void waitForAllWatchers() throws Exception {
+      timeOfLastWatcherInvocation = System.currentTimeMillis();
+      while (System.currentTimeMillis() - timeOfLastWatcherInvocation < 1000) {
+        Thread.sleep(1000);
+      }
+    }
+
     final int TIMEOUT = 5000;
 
     @Test
@@ -235,13 +257,16 @@ public class WatcherTest extends ClientBase {
 
     @Test
     public void testWatcherAutoResetDisabledWithGlobal() throws Exception {
-        ClientCnxn.setDisableAutoResetWatch(true);
+        /**
+         * When ZooKeeper is created this property will get used.
+         */
+        System.setProperty(ZKClientConfig.DISABLE_AUTO_WATCH_RESET, "true");
         testWatcherAutoResetWithGlobal();
     }
 
     @Test
     public void testWatcherAutoResetDisabledWithLocal() throws Exception {
-        ClientCnxn.setDisableAutoResetWatch(true);
+        System.setProperty(ZKClientConfig.DISABLE_AUTO_WATCH_RESET, "true");
         testWatcherAutoResetWithLocal();
     }
 
@@ -270,7 +295,8 @@ public class WatcherTest extends ClientBase {
         localWatcher.waitForDisconnected(500);
         startServer();
         globalWatcher.waitForConnected(3000);
-        if (!isGlobal && !ClientCnxn.getDisableAutoResetWatch()) {
+        boolean disableAutoWatchReset = zk.getClientConfig().getBoolean(ZKClientConfig.DISABLE_AUTO_WATCH_RESET);
+        if (!isGlobal && !disableAutoWatchReset) {
             localWatcher.waitForConnected(500);
         }
 
@@ -280,7 +306,7 @@ public class WatcherTest extends ClientBase {
                 CreateMode.PERSISTENT);
 
         WatchedEvent e;
-        if (!ClientCnxn.getDisableAutoResetWatch()) {
+        if (!disableAutoWatchReset) {
             e = localWatcher.events.poll(TIMEOUT, TimeUnit.MILLISECONDS);
             Assert.assertEquals(e.getPath(), EventType.NodeDataChanged, e.getType());
             Assert.assertEquals("/watchtest/child", e.getPath());
@@ -289,7 +315,7 @@ public class WatcherTest extends ClientBase {
             // why waste the time on poll
         }
 
-        if (!ClientCnxn.getDisableAutoResetWatch()) {
+        if (!disableAutoWatchReset) {
             e = localWatcher.events.poll(TIMEOUT, TimeUnit.MILLISECONDS);
             // The create will trigger the get children and the exist
             // watches
@@ -300,7 +326,7 @@ public class WatcherTest extends ClientBase {
             // why waste the time on poll
         }
 
-        if (!ClientCnxn.getDisableAutoResetWatch()) {
+        if (!disableAutoWatchReset) {
             e = localWatcher.events.poll(TIMEOUT, TimeUnit.MILLISECONDS);
             Assert.assertEquals(EventType.NodeChildrenChanged, e.getType());
             Assert.assertEquals("/watchtest", e.getPath());
@@ -315,11 +341,11 @@ public class WatcherTest extends ClientBase {
         try {
             try {
                 localWatcher.waitForDisconnected(500);
-                if (!isGlobal && !ClientCnxn.getDisableAutoResetWatch()) {
+                if (!isGlobal && !disableAutoWatchReset) {
                     Assert.fail("Got an event when I shouldn't have");
                 }
             } catch(TimeoutException toe) {
-                if (ClientCnxn.getDisableAutoResetWatch()) {
+                if (disableAutoWatchReset) {
                     Assert.fail("Didn't get an event when I should have");
                 }
                 // Else what we are expecting since there are no outstanding watches
@@ -360,14 +386,14 @@ public class WatcherTest extends ClientBase {
         localWatcher.waitForDisconnected(500);
         startServer();
         globalWatcher.waitForConnected(TIMEOUT);
-        if (!isGlobal && !ClientCnxn.getDisableAutoResetWatch()) {
+        if (!isGlobal && !disableAutoWatchReset) {
             localWatcher.waitForConnected(500);
         }
 
         zk.delete("/watchtest/child", -1);
         zk.delete("/watchtest", -1);
 
-        if (!ClientCnxn.getDisableAutoResetWatch()) {
+        if (!disableAutoWatchReset) {
             e = localWatcher.events.poll(TIMEOUT, TimeUnit.MILLISECONDS);
             Assert.assertEquals(EventType.NodeDeleted, e.getType());
             Assert.assertEquals("/watchtest/child", e.getPath());
@@ -379,7 +405,6 @@ public class WatcherTest extends ClientBase {
         // Make sure nothing is straggling!
         Thread.sleep(1000);
         Assert.assertTrue(localWatcher.events.isEmpty());
-
     }
 
 }

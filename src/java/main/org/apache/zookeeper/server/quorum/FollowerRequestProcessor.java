@@ -18,22 +18,26 @@
 
 package org.apache.zookeeper.server.quorum;
 
+import java.io.IOException;
 import java.util.concurrent.LinkedBlockingQueue;
 
-import org.apache.log4j.Logger;
-
+import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooDefs.OpCode;
-import org.apache.zookeeper.server.RequestProcessor;
 import org.apache.zookeeper.server.Request;
+import org.apache.zookeeper.server.RequestProcessor;
+import org.apache.zookeeper.server.ZooKeeperCriticalThread;
 import org.apache.zookeeper.server.ZooTrace;
+import org.apache.zookeeper.txn.ErrorTxn;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This RequestProcessor forwards any requests that modify the state of the
  * system to the Leader.
  */
-public class FollowerRequestProcessor extends Thread implements
+public class FollowerRequestProcessor extends ZooKeeperCriticalThread implements
         RequestProcessor {
-    private static final Logger LOG = Logger.getLogger(FollowerRequestProcessor.class);
+    private static final Logger LOG = LoggerFactory.getLogger(FollowerRequestProcessor.class);
 
     FollowerZooKeeperServer zks;
 
@@ -45,7 +49,8 @@ public class FollowerRequestProcessor extends Thread implements
 
     public FollowerRequestProcessor(FollowerZooKeeperServer zks,
             RequestProcessor nextProcessor) {
-        super("FollowerRequestProcessor:" + zks.getServerId());
+        super("FollowerRequestProcessor:" + zks.getServerId(), zks
+                .getZooKeeperServerListener());
         this.zks = zks;
         this.nextProcessor = nextProcessor;
     }
@@ -66,7 +71,7 @@ public class FollowerRequestProcessor extends Thread implements
                 // the request to the leader so that we are ready to receive
                 // the response
                 nextProcessor.processRequest(request);
-                
+
                 // We now ship the request to the leader. As with all
                 // other quorum operations, sync also follows this code
                 // path, but different from others, we need to keep track
@@ -78,23 +83,54 @@ public class FollowerRequestProcessor extends Thread implements
                     zks.getFollower().request(request);
                     break;
                 case OpCode.create:
+                case OpCode.create2:
+                case OpCode.createTTL:
+                case OpCode.createContainer:
                 case OpCode.delete:
+                case OpCode.deleteContainer:
                 case OpCode.setData:
+                case OpCode.reconfig:
                 case OpCode.setACL:
+                case OpCode.multi:
+                case OpCode.check:
+                    zks.getFollower().request(request);
+                    break;
                 case OpCode.createSession:
                 case OpCode.closeSession:
-                    zks.getFollower().request(request);
+                    // Don't forward local sessions to the leader.
+                    if (!request.isLocalSession()) {
+                        zks.getFollower().request(request);
+                    }
                     break;
                 }
             }
         } catch (Exception e) {
-            LOG.error("Unexpected exception causing exit", e);
+            handleException(this.getName(), e);
         }
         LOG.info("FollowerRequestProcessor exited loop!");
     }
 
     public void processRequest(Request request) {
         if (!finished) {
+            // Before sending the request, check if the request requires a
+            // global session and what we have is a local session. If so do
+            // an upgrade.
+            Request upgradeRequest = null;
+            try {
+                upgradeRequest = zks.checkUpgradeSession(request);
+            } catch (KeeperException ke) {
+                if (request.getHdr() != null) {
+                    request.getHdr().setType(OpCode.error);
+                    request.setTxn(new ErrorTxn(ke.code().intValue()));
+                }
+                request.setException(ke);
+                LOG.info("Error creating upgrade request",  ke);
+            } catch (IOException ie) {
+                LOG.error("Unexpected error in upgrade", ie);
+            }
+            if (upgradeRequest != null) {
+                queuedRequests.add(upgradeRequest);
+            }
             queuedRequests.add(request);
         }
     }

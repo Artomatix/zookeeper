@@ -28,7 +28,9 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.apache.zookeeper.AsyncCallback;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.PortAssignment;
@@ -45,16 +47,16 @@ import org.apache.zookeeper.server.ZooKeeperServer;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
-import org.junit.Ignore;
 import org.junit.Test;
 
 public class SessionTest extends ZKTestCase {
-    protected static final Logger LOG = Logger.getLogger(SessionTest.class);
+    protected static final Logger LOG = LoggerFactory.getLogger(SessionTest.class);
 
     private static final String HOSTPORT = "127.0.0.1:" +
             PortAssignment.unique();
-    
+
     private ServerCnxnFactory serverFactory;
+    private ZooKeeperServer zs;
 
     private CountDownLatch startSignal;
 
@@ -69,7 +71,7 @@ public class SessionTest extends ZKTestCase {
         }
 
         ClientBase.setupTestEnv();
-        ZooKeeperServer zs = new ZooKeeperServer(tmpDir, tmpDir, TICK_TIME);
+        zs = new ZooKeeperServer(tmpDir, tmpDir, TICK_TIME);
 
         final int PORT = Integer.parseInt(HOSTPORT.split(":")[1]);
         serverFactory = ServerCnxnFactory.createFactory(PORT, -1);
@@ -83,6 +85,7 @@ public class SessionTest extends ZKTestCase {
     @After
     public void tearDown() throws Exception {
         serverFactory.shutdown();
+        zs.shutdown();
         Assert.assertTrue("waiting for server down",
                    ClientBase.waitForServerDown(HOSTPORT,
                                                 CONNECTION_TIMEOUT));
@@ -211,6 +214,25 @@ public class SessionTest extends ZKTestCase {
         LOG.info("before close zk with session id 0x"
                 + Long.toHexString(zk.getSessionId()) + "!");
         zk.close();
+        try {
+            zk.getData("/e", false, stat);
+            Assert.fail("Should have received a SessionExpiredException");
+        } catch(KeeperException.SessionExpiredException e) {}
+
+        AsyncCallback.DataCallback cb = new AsyncCallback.DataCallback() {
+            String status = "not done";
+            public void processResult(int rc, String p, Object c, byte[] b, Stat s) {
+                synchronized(this) { status = KeeperException.Code.get(rc).toString(); this.notify(); }
+            }
+           public String toString() { return status; }
+        };
+        zk.getData("/e", false, cb, null);
+        synchronized(cb) {
+            if (cb.toString().equals("not done")) {
+                cb.wait(1000);
+            }
+        }
+        Assert.assertEquals(KeeperException.Code.SESSIONEXPIRED.toString(), cb.toString());
     }
 
     private List<Thread> findThreads(String name) {
@@ -229,6 +251,7 @@ public class SessionTest extends ZKTestCase {
     /**
      * Make sure ephemerals get cleaned up when a session times out.
      */
+    @SuppressWarnings("deprecation")
     @Test
     public void testSessionTimeout() throws Exception {
         final int TIMEOUT = 5000;
@@ -287,7 +310,6 @@ public class SessionTest extends ZKTestCase {
      * @throws KeeperException
      */
     @Test
-    @Ignore
     public void testSessionMove() throws Exception {
         String hostPorts[] = HOSTPORT.split(",");
         DisconnectableZooKeeper zk = new DisconnectableZooKeeper(hostPorts[0],
@@ -304,6 +326,20 @@ public class SessionTest extends ZKTestCase {
                     new MyWatcher(Integer.toString(i+1)),
                     zk.getSessionId(),
                     zk.getSessionPasswd());
+            final int result[] = new int[1];
+            result[0] = Integer.MAX_VALUE;
+            zknew.sync("/", new AsyncCallback.VoidCallback() {
+                    public void processResult(int rc, String path, Object ctx) {
+                        synchronized(result) { result[0] = rc; result.notify(); }
+                    }
+                }, null);
+            synchronized(result) {
+                if(result[0] == Integer.MAX_VALUE) {
+                    result.wait(5000);
+                }
+            }
+            LOG.info(hostPorts[(i+1)%hostPorts.length] + " Sync returned " + result[0]);
+            Assert.assertTrue(result[0] == KeeperException.Code.OK.intValue());
             zknew.setData("/", new byte[1], -1);
             try {
                 zk.setData("/", new byte[1], -1);

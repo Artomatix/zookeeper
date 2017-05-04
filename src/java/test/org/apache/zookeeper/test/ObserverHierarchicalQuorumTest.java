@@ -17,13 +17,10 @@
 
 package org.apache.zookeeper.test;
 
-import org.apache.log4j.Logger;
 import org.apache.zookeeper.server.quorum.QuorumPeer;
 import org.junit.Test;
 
 public class ObserverHierarchicalQuorumTest extends HierarchicalQuorumTest {
-    private static final Logger LOG = Logger.getLogger(QuorumBase.class);
-       
     /**
      * startServers(true) puts two observers into a 5 peer ensemble
      */

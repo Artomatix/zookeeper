@@ -37,10 +37,11 @@ import java.io.FileNotFoundException;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class Log4JSource implements LogSource {
-    private static final Logger LOG = Logger.getLogger(Log4JSource.class);
+    private static final Logger LOG = LoggerFactory.getLogger(Log4JSource.class);
     
     private static final int skipN = 10000;
     private static final String DATE_FORMAT = "yyyy-MM-dd HH:mm:ss,SSS";
@@ -350,11 +351,21 @@ public class Log4JSource implements LogSource {
 		
 		LogIterator iter = s.iterator(starttime, endtime);
 		System.out.println(iter);
+		try {
+		  iter.close();
+		} catch (IOException ioe) {
+		  System.out.println(ioe.getMessage());
+		}
 	    }; };
 	    Thread t2 = new Thread() { public void run () { 
 		
 		LogIterator iter = s.iterator(starttime, endtime);
 		System.out.println(iter);
+		try {
+		  iter.close();
+		} catch (IOException ioe) {
+		  System.out.println(ioe.getMessage());
+		}
 	    }; };
 	    Thread t3 = new Thread() { public void run () { 
 		

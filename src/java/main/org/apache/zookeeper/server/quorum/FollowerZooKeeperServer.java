@@ -23,7 +23,8 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
 import org.apache.jute.Record;
-import org.apache.log4j.Logger;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.apache.zookeeper.server.FinalRequestProcessor;
 import org.apache.zookeeper.server.Request;
 import org.apache.zookeeper.server.RequestProcessor;
@@ -36,43 +37,39 @@ import org.apache.zookeeper.txn.TxnHeader;
  * Just like the standard ZooKeeperServer. We just replace the request
  * processors: FollowerRequestProcessor -> CommitProcessor ->
  * FinalRequestProcessor
- * 
+ *
  * A SyncRequestProcessor is also spawned off to log proposals from the leader.
  */
 public class FollowerZooKeeperServer extends LearnerZooKeeperServer {
     private static final Logger LOG =
-        Logger.getLogger(FollowerZooKeeperServer.class);
-
-    CommitProcessor commitProcessor;
-
-    SyncRequestProcessor syncProcessor;
+        LoggerFactory.getLogger(FollowerZooKeeperServer.class);
 
     /*
      * Pending sync requests
      */
     ConcurrentLinkedQueue<Request> pendingSyncs;
-    
+
     /**
      * @param port
      * @param dataDir
      * @throws IOException
      */
     FollowerZooKeeperServer(FileTxnSnapLog logFactory,QuorumPeer self,
-            DataTreeBuilder treeBuilder, ZKDatabase zkDb) throws IOException {
+            ZKDatabase zkDb) throws IOException {
         super(logFactory, self.tickTime, self.minSessionTimeout,
-                self.maxSessionTimeout, treeBuilder, zkDb, self);
+                self.maxSessionTimeout, zkDb, self);
         this.pendingSyncs = new ConcurrentLinkedQueue<Request>();
     }
 
     public Follower getFollower(){
         return self.follower;
-    }      
+    }
 
     @Override
     protected void setupRequestProcessors() {
         RequestProcessor finalProcessor = new FinalRequestProcessor(this);
         commitProcessor = new CommitProcessor(finalProcessor,
-                Long.toString(getServerId()), true);
+                Long.toString(getServerId()), true, getZooKeeperServerListener());
         commitProcessor.start();
         firstProcessor = new FollowerRequestProcessor(this, commitProcessor);
         ((FollowerRequestProcessor) firstProcessor).start();
@@ -84,11 +81,7 @@ public class FollowerZooKeeperServer extends LearnerZooKeeperServer {
     LinkedBlockingQueue<Request> pendingTxns = new LinkedBlockingQueue<Request>();
 
     public void logRequest(TxnHeader hdr, Record txn) {
-        Request request = new Request(null, hdr.getClientId(), hdr.getCxid(),
-                hdr.getType(), null, null);
-        request.hdr = hdr;
-        request.txn = txn;
-        request.zxid = hdr.getZxid();
+        Request request = new Request(hdr.getClientId(), hdr.getCxid(), hdr.getType(), hdr, txn, hdr.getZxid());
         if ((request.zxid & 0xffffffffL) != 0) {
             pendingTxns.add(request);
         }
@@ -96,7 +89,7 @@ public class FollowerZooKeeperServer extends LearnerZooKeeperServer {
     }
 
     /**
-     * When a COMMIT message is received, eventually this method is called, 
+     * When a COMMIT message is received, eventually this method is called,
      * which matches up the zxid from the COMMIT with (hopefully) the head of
      * the pendingTxns queue and hands it to the commitProcessor to commit.
      * @param zxid - must correspond to the head of pendingTxns if it exists
@@ -109,7 +102,7 @@ public class FollowerZooKeeperServer extends LearnerZooKeeperServer {
         }
         long firstElementZxid = pendingTxns.element().zxid;
         if (firstElementZxid != zxid) {
-            LOG.fatal("Committing zxid 0x" + Long.toHexString(zxid)
+            LOG.error("Committing zxid 0x" + Long.toHexString(zxid)
                     + " but next pending txn 0x"
                     + Long.toHexString(firstElementZxid));
             System.exit(12);
@@ -117,40 +110,23 @@ public class FollowerZooKeeperServer extends LearnerZooKeeperServer {
         Request request = pendingTxns.remove();
         commitProcessor.commit(request);
     }
-    
+
     synchronized public void sync(){
         if(pendingSyncs.size() ==0){
             LOG.warn("Not expecting a sync.");
             return;
         }
-                
+
         Request r = pendingSyncs.remove();
 		commitProcessor.commit(r);
     }
-             
+
     @Override
     public int getGlobalOutstandingLimit() {
-        return super.getGlobalOutstandingLimit() / (self.getQuorumSize() - 1);
+        int divisor = self.getQuorumSize() > 2 ? self.getQuorumSize() - 1 : 1;
+        return super.getGlobalOutstandingLimit() / divisor;
     }
-    
-    @Override
-    public void shutdown() {
-        LOG.info("Shutting down");
-        try {
-            super.shutdown();
-        } catch (Exception e) {
-            LOG.warn("Ignoring unexpected exception during shutdown", e);
-        }
-        try {
-            if (syncProcessor != null) {
-                syncProcessor.shutdown();
-            }
-        } catch (Exception e) {
-            LOG.warn("Ignoring unexpected exception in syncprocessor shutdown",
-                    e);
-        }
-    }
-    
+
     @Override
     public String getState() {
         return "follower";

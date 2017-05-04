@@ -18,33 +18,44 @@
 
 package org.apache.zookeeper.server.util;
 
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Map.Entry;
-
-import org.apache.log4j.Logger;
-
+import org.apache.jute.BinaryInputArchive;
 import org.apache.jute.InputArchive;
 import org.apache.jute.OutputArchive;
 import org.apache.jute.Record;
 import org.apache.zookeeper.ZooDefs.OpCode;
 import org.apache.zookeeper.server.DataTree;
 import org.apache.zookeeper.server.ZooTrace;
+import org.apache.zookeeper.txn.CreateContainerTxn;
 import org.apache.zookeeper.txn.CreateSessionTxn;
+import org.apache.zookeeper.txn.CreateTTLTxn;
 import org.apache.zookeeper.txn.CreateTxn;
+import org.apache.zookeeper.txn.CreateTxnV0;
 import org.apache.zookeeper.txn.DeleteTxn;
 import org.apache.zookeeper.txn.ErrorTxn;
+import org.apache.zookeeper.txn.MultiTxn;
 import org.apache.zookeeper.txn.SetACLTxn;
 import org.apache.zookeeper.txn.SetDataTxn;
 import org.apache.zookeeper.txn.TxnHeader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.ByteArrayInputStream;
+import java.io.EOFException;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Map.Entry;
 
 public class SerializeUtils {
-    private static final Logger LOG = Logger.getLogger(SerializeUtils.class);
+    private static final Logger LOG = LoggerFactory.getLogger(SerializeUtils.class);
     
-    public static Record deserializeTxn(InputArchive ia, TxnHeader hdr)
+    public static Record deserializeTxn(byte txnBytes[], TxnHeader hdr)
             throws IOException {
+        final ByteArrayInputStream bais = new ByteArrayInputStream(txnBytes);
+        InputArchive ia = BinaryInputArchive.getArchive(bais);
+
         hdr.deserialize(ia, "hdr");
+        bais.mark(bais.available());
         Record txn = null;
         switch (hdr.getType()) {
         case OpCode.createSession:
@@ -55,11 +66,20 @@ public class SerializeUtils {
         case OpCode.closeSession:
             return null;
         case OpCode.create:
+        case OpCode.create2:
             txn = new CreateTxn();
             break;
+        case OpCode.createTTL:
+            txn = new CreateTTLTxn();
+            break;
+        case OpCode.createContainer:
+            txn = new CreateContainerTxn();
+            break;
         case OpCode.delete:
+        case OpCode.deleteContainer:
             txn = new DeleteTxn();
             break;
+        case OpCode.reconfig:
         case OpCode.setData:
             txn = new SetDataTxn();
             break;
@@ -69,9 +89,33 @@ public class SerializeUtils {
         case OpCode.error:
             txn = new ErrorTxn();
             break;
+        case OpCode.multi:
+            txn = new MultiTxn();
+            break;
+        default:
+            throw new IOException("Unsupported Txn with type=%d" + hdr.getType());
         }
         if (txn != null) {
-            txn.deserialize(ia, "txn");
+            try {
+                txn.deserialize(ia, "txn");
+            } catch(EOFException e) {
+                // perhaps this is a V0 Create
+                if (hdr.getType() == OpCode.create) {
+                    CreateTxn create = (CreateTxn)txn;
+                    bais.reset();
+                    CreateTxnV0 createv0 = new CreateTxnV0();
+                    createv0.deserialize(ia, "txn");
+                    // cool now make it V1. a -1 parentCVersion will
+                    // trigger fixup processing in processTxn
+                    create.setPath(createv0.getPath());
+                    create.setData(createv0.getData());
+                    create.setAcl(createv0.getAcl());
+                    create.setEphemeral(createv0.getEphemeral());
+                    create.setParentCVersion(-1);
+                } else {
+                    throw e;
+                }
+            }
         }
         return txn;
     }

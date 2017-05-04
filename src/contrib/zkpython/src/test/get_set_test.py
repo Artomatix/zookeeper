@@ -16,7 +16,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import zookeeper, zktestbase, unittest, threading
+import zookeeper, zktestbase, unittest, threading, sys
+if sys.version_info < (3,):
+	range = xrange
+
 ZOO_OPEN_ACL_UNSAFE = {"perms":0x1f, "scheme":"world", "id" :"anyone"}
 
 class GetSetTest(zktestbase.TestBase):
@@ -28,6 +31,19 @@ class GetSetTest(zktestbase.TestBase):
                              "on",[ZOO_OPEN_ACL_UNSAFE], zookeeper.EPHEMERAL)
         except:
             pass
+
+    def test_empty_node(self):
+        """
+        Test for a bug when instead of empty string we can get
+        random data from buffer malloc'ed to hold node contents.
+        See ZOOKEEPER-1906 for details
+        """
+        NODE_PATH = "/zk-python-test-empty-node"
+        self.ensureDeleted(NODE_PATH)
+        zookeeper.create(self.handle, NODE_PATH, "",
+                         [{"perms":0x1f, "scheme":"world", "id" :"anyone"}])
+        (data,stat) = zookeeper.get(self.handle, NODE_PATH, None)
+        self.assertEqual(data, "", "Data is not empty as expected: " + data)
 
     def test_sync_getset(self):
         self.assertEqual(self.connected, True, "Not connected!")
@@ -43,6 +59,13 @@ class GetSetTest(zktestbase.TestBase):
                           "/zk-python-getsettest",
                           "test",
                           stat["version"]+1)
+        stat2 = zookeeper.set2(self.handle, "/zk-python-getsettest",
+                               "set2", stat["version"])
+        self.assertNotEqual(stat2, None, "set2 call failed, return should not be None")
+        self.assertEqual(stat2["numChildren"], 0,
+                         "set2 call failed, numChildren not 0 in set2 call")
+        (data,stat) = zookeeper.get(self.handle, "/zk-python-getsettest", None)
+        self.assertEqual(data, "set2", "Data is not 'set2' as expected: " + data)
 
     def test_stat_deleted_node(self):
         """
@@ -77,7 +100,7 @@ class GetSetTest(zktestbase.TestBase):
         1Mb with default parameters (depends on ZooKeeper server).
         """
 
-        data = ''.join(["A" for x in xrange(1024*1023)])
+        data = ''.join(["A" for x in range(1024*1023)])
         self.ensureDeleted("/zk-python-test-large-datanode")
         zookeeper.create(self.handle, "/zk-python-test-large-datanode", data,
                          [{"perms":0x1f, "scheme":"world", "id" :"anyone"}])
