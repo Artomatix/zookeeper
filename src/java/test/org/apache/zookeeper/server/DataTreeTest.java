@@ -26,12 +26,10 @@ import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.ZKTestCase;
 import org.apache.zookeeper.data.Stat;
-import org.apache.zookeeper.server.DataTree;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Test;
-import org.apache.zookeeper.server.DataNode;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -150,18 +148,18 @@ public class DataTreeTest extends ZKTestCase {
                 newCversion + ", " + newPzxid + ">",
                 (newCversion == prevCversion + 1 && newPzxid == prevPzxid + 1));
     }
-   
+
     @Test(timeout = 60000)
     public void testPathTrieClearOnDeserialize() throws Exception {
 
         //Create a DataTree with quota nodes so PathTrie get updated
         DataTree dserTree = new DataTree();
-        
+
         dserTree.createNode("/bug", new byte[20], null, -1, 1, 1, 1);
         dserTree.createNode(Quotas.quotaZookeeper+"/bug", null, null, -1, 1, 1, 1);
         dserTree.createNode(Quotas.quotaPath("/bug"), new byte[20], null, -1, 1, 1, 1);
         dserTree.createNode(Quotas.statPath("/bug"), new byte[20], null, -1, 1, 1, 1);
-        
+
         //deserialize a DataTree; this should clear the old /bug nodes and pathTrie
         DataTree tree = new DataTree();
 
@@ -200,29 +198,34 @@ public class DataTreeTest extends ZKTestCase {
         BinaryOutputArchive oa = new BinaryOutputArchive(out) {
             @Override
             public void writeRecord(Record r, String tag) throws IOException {
-                DataNode node = (DataNode) r;
-                if (node.data.length == 1 && node.data[0] == 42) {
-                    final Semaphore semaphore = new Semaphore(0);
-                    new Thread(new Runnable() {
-                        @Override
-                        public void run() {
-                            synchronized (markerNode) {
-                                //When we lock markerNode, allow writeRecord to continue
-                                semaphore.release();
+                // Need check if the record is a DataNode instance because of changes in ZOOKEEPER-2014
+                // which adds default ACL to config node.
+                if (r instanceof DataNode) {
+                    DataNode node = (DataNode) r;
+                    if (node.data.length == 1 && node.data[0] == 42) {
+                        final Semaphore semaphore = new Semaphore(0);
+                        new Thread(new Runnable() {
+                            @Override
+                            public void run() {
+                                synchronized (markerNode) {
+                                    //When we lock markerNode, allow writeRecord to continue
+                                    semaphore.release();
+                                }
                             }
-                        }
-                    }).start();
+                        }).start();
 
-                    try {
-                        boolean acquired = semaphore.tryAcquire(30, TimeUnit.SECONDS);
-                        //This is the real assertion - could another thread lock
-                        //the DataNode we're currently writing
-                        Assert.assertTrue("Couldn't acquire a lock on the DataNode while we were calling tree.serialize", acquired);
-                    } catch (InterruptedException e1) {
-                        throw new RuntimeException(e1);
+                        try {
+                            boolean acquired = semaphore.tryAcquire(30, TimeUnit.SECONDS);
+                            //This is the real assertion - could another thread lock
+                            //the DataNode we're currently writing
+                            Assert.assertTrue("Couldn't acquire a lock on the DataNode while we were calling tree.serialize", acquired);
+                        } catch (InterruptedException e1) {
+                            throw new RuntimeException(e1);
+                        }
+                        ranTestCase.set(true);
                     }
-                    ranTestCase.set(true);
                 }
+
                 super.writeRecord(r, tag);
             }
         };

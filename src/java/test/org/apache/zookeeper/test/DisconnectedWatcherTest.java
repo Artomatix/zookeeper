@@ -189,8 +189,7 @@ public class DisconnectedWatcherTest extends ClientBase {
         String pathBase = "/long-path-000000000-111111111-222222222-333333333-444444444-"
                           + "555555555-666666666-777777777-888888888-999999999";
 
-        zk1.create(pathBase, null, Ids.OPEN_ACL_UNSAFE,
-                   CreateMode.PERSISTENT);
+        zk1.create(pathBase, null, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 
         // Create 10,000 nodes. This should ensure the length of our
         // watches set below exceeds 1MB.
@@ -226,16 +225,14 @@ public class DisconnectedWatcherTest extends ClientBase {
         i = 0;
         for (String path : paths) {
             if (i % 3 == 0) {
-                zk1.create(path + "/ch", null, Ids.OPEN_ACL_UNSAFE,
-                           CreateMode.PERSISTENT);
+                zk1.create(path + "/ch", null, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 
                 WatchedEvent e = childWatcher.events.poll(TIMEOUT, TimeUnit.MILLISECONDS);
                 Assert.assertNotNull(e);
                 Assert.assertEquals(EventType.NodeChildrenChanged, e.getType());
                 Assert.assertEquals(path, e.getPath());
             } else if (i % 3 == 1) {
-                zk1.create(path + "/foo", null, Ids.OPEN_ACL_UNSAFE,
-                           CreateMode.PERSISTENT);
+                zk1.create(path + "/foo", null, Ids.OPEN_ACL_UNSAFE, CreateMode.PERSISTENT);
 
                 WatchedEvent e = childWatcher.events.poll(TIMEOUT, TimeUnit.MILLISECONDS);
                 Assert.assertNotNull(e);

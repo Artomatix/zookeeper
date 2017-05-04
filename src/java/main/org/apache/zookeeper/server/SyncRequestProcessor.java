@@ -44,7 +44,8 @@ import org.slf4j.LoggerFactory;
  *             be null. This change the semantic of txnlog on the observer
  *             since it only contains committed txns.
  */
-public class SyncRequestProcessor extends ZooKeeperCriticalThread implements RequestProcessor {
+public class SyncRequestProcessor extends ZooKeeperCriticalThread implements
+        RequestProcessor {
     private static final Logger LOG = LoggerFactory.getLogger(SyncRequestProcessor.class);
     private final ZooKeeperServer zks;
     private final LinkedBlockingQueue<Request> queuedRequests =
@@ -181,6 +182,7 @@ public class SyncRequestProcessor extends ZooKeeperCriticalThread implements Req
             }
         } catch (Throwable t) {
             handleException(this.getName(), t);
+        } finally{
             running = false;
         }
         LOG.info("SyncRequestProcessor exited!");

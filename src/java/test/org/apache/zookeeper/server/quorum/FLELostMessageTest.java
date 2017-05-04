@@ -41,7 +41,6 @@ import org.junit.Test;
 public class FLELostMessageTest extends ZKTestCase {
     protected static final Logger LOG = LoggerFactory.getLogger(FLELostMessageTest.class);
 
-
     int count;
     HashMap<Long,QuorumServer> peers;
     File tmpdir[];
@@ -65,9 +64,7 @@ public class FLELostMessageTest extends ZKTestCase {
 
     @Test
     public void testLostMessage() throws Exception {
-        FastLeaderElection le[] = new FastLeaderElection[count];
-
-        LOG.info("TestLE: " + getTestName()+ ", " + count);
+        LOG.info("TestLE: {}, {}", getTestName(), count);
         for(int i = 0; i < count; i++) {
             int clientport = PortAssignment.unique();
             peers.put(Long.valueOf(i),
@@ -80,7 +77,6 @@ public class FLELostMessageTest extends ZKTestCase {
         /*
          * Start server 0
          */
-
         QuorumPeer peer = new QuorumPeer(peers, tmpdir[1], tmpdir[1], port[1], 3, 1, 1000, 2, 2);
         peer.startLeaderElection();
         FLETestUtils.LEThread thread = new FLETestUtils.LEThread(peer, 1);
@@ -97,14 +93,9 @@ public class FLELostMessageTest extends ZKTestCase {
     }
 
     void mockServer() throws InterruptedException, IOException {
-        /*
-         * Create an instance of the connection manager
-         */
         QuorumPeer peer = new QuorumPeer(peers, tmpdir[0], tmpdir[0], port[0], 3, 0, 1000, 2, 2);
         cnxManager = new QuorumCnxManager(peer);
-        QuorumCnxManager.Listener listener = cnxManager.listener;
-        listener.start();
-
+        cnxManager.listener.start();
 
         cnxManager.toSend(1l, FLETestUtils.createMsg(ServerState.LOOKING.ordinal(), 0, 0, 0));
         cnxManager.recvQueue.take();

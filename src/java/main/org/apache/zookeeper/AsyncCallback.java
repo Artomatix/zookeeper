@@ -70,7 +70,7 @@ public interface AsyncCallback {
      */
     interface DataCallback extends AsyncCallback {
         /**
-         * Process the result of the asynchronous call.
+         * Process the result of asynchronous calls.
          * <p/>
          * On success, rc is
          * {@link org.apache.zookeeper.KeeperException.Code#OK}.
@@ -181,6 +181,28 @@ public interface AsyncCallback {
     }
 
     /**
+     * This callback is used to retrieve the name and stat of the node.
+     */
+    interface Create2Callback extends AsyncCallback {
+        /**
+         * Process the result of the asynchronous call.
+         * See {@link org.apache.zookeeper.AsyncCallback.StringCallback}.
+         *
+         * @param rc   The return code or the result of the call.
+         * @param path The path that we passed to asynchronous calls.
+         * @param ctx  Whatever context object that we passed to
+         *             asynchronous calls.
+         * @param name The name of the Znode that was created.
+         *             On success, <i>name</i> and <i>path</i> are usually
+         *             equal, unless a sequential node has been created.
+         * @param stat {@link org.apache.zookeeper.data.Stat} object of
+         *             the node on given path.
+         */
+        public void processResult(int rc, String path, Object ctx,
+        		String name, Stat stat);
+    }
+
+    /**
      * This callback is used to retrieve the name of the node.
      */
     interface StringCallback extends AsyncCallback {
@@ -266,7 +288,6 @@ public interface AsyncCallback {
      * This callback is used to process the multiple results from
      * a single multi call.
      * See {@link org.apache.zookeeper.ZooKeeper#multi} for more information.
-     * @since 3.4.7
      */
     interface MultiCallback extends AsyncCallback {
         /**

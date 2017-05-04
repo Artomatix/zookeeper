@@ -15,7 +15,7 @@ REM See the License for the specific language governing permissions and
 REM limitations under the License.
 
 set ZOOCFGDIR=%~dp0%..\conf
-set ZOO_LOG_DIR=%~dp0%..
+set ZOO_LOG_DIR=%~dp0%..\logs
 set ZOO_LOG4J_PROP=INFO,CONSOLE
 
 REM for sanity sake assume Java 1.6
@@ -47,3 +47,4 @@ if not exist "%JAVA_HOME%"\bin\java.exe (
 )
 
 set JAVA="%JAVA_HOME%"\bin\java
+

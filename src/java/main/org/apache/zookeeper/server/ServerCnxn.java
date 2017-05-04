@@ -23,11 +23,9 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
+import java.security.cert.Certificate;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.jute.Record;
@@ -36,6 +34,8 @@ import org.apache.zookeeper.Watcher;
 import org.apache.zookeeper.data.Id;
 import org.apache.zookeeper.proto.ReplyHeader;
 import org.apache.zookeeper.proto.RequestHeader;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Interface to a Server connection - represents a connection from a client
@@ -45,8 +45,9 @@ public abstract class ServerCnxn implements Stats, Watcher {
     // This is just an arbitrary object to represent requests issued by
     // (aka owned by) this class
     final public static Object me = new Object();
+    private static final Logger LOG = LoggerFactory.getLogger(ServerCnxn.class);
     
-    protected ArrayList<Id> authInfo = new ArrayList<Id>();
+    private Set<Id> authInfo = Collections.newSetFromMap(new ConcurrentHashMap<Id, Boolean>());
 
     /**
      * If the client is of old version, we don't send r-o mode info to it.
@@ -67,19 +68,17 @@ public abstract class ServerCnxn implements Stats, Watcher {
 
     public abstract void process(WatchedEvent event);
 
-    abstract long getSessionId();
+    public abstract long getSessionId();
 
     abstract void setSessionId(long sessionId);
 
     /** auth info for the cnxn, returns an unmodifyable list */
     public List<Id> getAuthInfo() {
-        return Collections.unmodifiableList(authInfo);
+        return Collections.unmodifiableList(new ArrayList<>(authInfo));
     }
 
     public void addAuthInfo(Id id) {
-        if (authInfo.contains(id) == false) {
-            authInfo.add(id);
-        }
+        authInfo.add(id);
     }
 
     public boolean removeAuthInfo(Id id) {
@@ -114,140 +113,6 @@ public abstract class ServerCnxn implements Stats, Watcher {
         public String toString() {
             return "EndOfStreamException: " + getMessage();
         }
-    }
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int confCmd =
-        ByteBuffer.wrap("conf".getBytes()).getInt();
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int consCmd =
-        ByteBuffer.wrap("cons".getBytes()).getInt();
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int crstCmd =
-        ByteBuffer.wrap("crst".getBytes()).getInt();
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int dumpCmd =
-        ByteBuffer.wrap("dump".getBytes()).getInt();
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int enviCmd =
-        ByteBuffer.wrap("envi".getBytes()).getInt();
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int getTraceMaskCmd =
-        ByteBuffer.wrap("gtmk".getBytes()).getInt();
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int ruokCmd =
-        ByteBuffer.wrap("ruok".getBytes()).getInt();
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int setTraceMaskCmd =
-        ByteBuffer.wrap("stmk".getBytes()).getInt();
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int srvrCmd =
-        ByteBuffer.wrap("srvr".getBytes()).getInt();
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int srstCmd =
-        ByteBuffer.wrap("srst".getBytes()).getInt();
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int statCmd =
-        ByteBuffer.wrap("stat".getBytes()).getInt();
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int wchcCmd =
-        ByteBuffer.wrap("wchc".getBytes()).getInt();
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int wchpCmd =
-        ByteBuffer.wrap("wchp".getBytes()).getInt();
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int wchsCmd =
-        ByteBuffer.wrap("wchs".getBytes()).getInt();
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int mntrCmd = ByteBuffer.wrap("mntr".getBytes())
-            .getInt();
-
-    /*
-     * See <a href="{@docRoot}/../../../docs/zookeeperAdmin.html#sc_zkCommands">
-     * Zk Admin</a>. this link is for all the commands.
-     */
-    protected final static int isroCmd = ByteBuffer.wrap("isro".getBytes())
-            .getInt();
-
-    protected final static HashMap<Integer, String> cmd2String =
-        new HashMap<Integer, String>();
-
-    // specify all of the commands that are available
-    static {
-        cmd2String.put(confCmd, "conf");
-        cmd2String.put(consCmd, "cons");
-        cmd2String.put(crstCmd, "crst");
-        cmd2String.put(dumpCmd, "dump");
-        cmd2String.put(enviCmd, "envi");
-        cmd2String.put(getTraceMaskCmd, "gtmk");
-        cmd2String.put(ruokCmd, "ruok");
-        cmd2String.put(setTraceMaskCmd, "stmk");
-        cmd2String.put(srstCmd, "srst");
-        cmd2String.put(srvrCmd, "srvr");
-        cmd2String.put(statCmd, "stat");
-        cmd2String.put(wchcCmd, "wchc");
-        cmd2String.put(wchpCmd, "wchp");
-        cmd2String.put(wchsCmd, "wchs");
-        cmd2String.put(mntrCmd, "mntr");
-        cmd2String.put(isroCmd, "isro");
     }
 
     protected void packetReceived() {
@@ -396,13 +261,16 @@ public abstract class ServerCnxn implements Stats, Watcher {
 
     public abstract InetSocketAddress getRemoteSocketAddress();
     public abstract int getInterestOps();
+    public abstract boolean isSecure();
+    public abstract Certificate[] getClientCertificateChain();
+    public abstract void setClientCertificateChain(Certificate[] chain);
     
     /**
      * Print information about the connection.
      * @param brief iff true prints brief details, otw full detail
      * @return information about this connection
      */
-    protected synchronized void
+    public synchronized void
     dumpConnectionInfo(PrintWriter pwriter, boolean brief) {
         pwriter.print(" ");
         pwriter.print(getRemoteSocketAddress());
@@ -449,4 +317,50 @@ public abstract class ServerCnxn implements Stats, Watcher {
         pwriter.print(")");
     }
 
+    public synchronized Map<String, Object> getConnectionInfo(boolean brief) {
+        Map<String, Object> info = new LinkedHashMap<String, Object>();
+        info.put("remote_socket_address", getRemoteSocketAddress());
+        info.put("interest_ops", getInterestOps());
+        info.put("outstanding_requests", getOutstandingRequests());
+        info.put("packets_received", getPacketsReceived());
+        info.put("packets_sent", getPacketsSent());
+        if (!brief) {
+            info.put("session_id", getSessionId());
+            info.put("last_operation", getLastOperation());
+            info.put("established", getEstablished());
+            info.put("session_timeout", getSessionTimeout());
+            info.put("last_cxid", getLastCxid());
+            info.put("last_zxid", getLastZxid());
+            info.put("last_response_time", getLastResponseTime());
+            info.put("last_latency", getLastLatency());
+            info.put("min_latency", getMinLatency());
+            info.put("avg_latency", getAvgLatency());
+            info.put("max_latency", getMaxLatency());
+        }
+        return info;
+    }
+
+    /**
+     * clean up the socket related to a command and also make sure we flush the
+     * data before we do that
+     *
+     * @param pwriter
+     *            the pwriter for a command socket
+     */
+    public void cleanupWriterSocket(PrintWriter pwriter) {
+        try {
+            if (pwriter != null) {
+                pwriter.flush();
+                pwriter.close();
+            }
+        } catch (Exception e) {
+            LOG.info("Error closing PrintWriter ", e);
+        } finally {
+            try {
+                close();
+            } catch (Exception e) {
+                LOG.error("Error closing a command socket ", e);
+            }
+        }
+    }
 }

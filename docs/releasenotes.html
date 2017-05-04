@@ -135,23 +135,8 @@ document.write("Last Published: " + document.lastModified);
 <a href="recipes.html">Recipes</a>
 </div>
 </div>
-<div onclick="SwitchMenu('menu_1.3', 'skin/')" id="menu_1.3Title" class="menutitle">BookKeeper</div>
+<div onclick="SwitchMenu('menu_1.3', 'skin/')" id="menu_1.3Title" class="menutitle">Admin &amp; Ops</div>
 <div id="menu_1.3" class="menuitemgroup">
-<div class="menuitem">
-<a href="bookkeeperStarted.html">Getting started</a>
-</div>
-<div class="menuitem">
-<a href="bookkeeperOverview.html">Overview</a>
-</div>
-<div class="menuitem">
-<a href="bookkeeperConfig.html">Setup guide</a>
-</div>
-<div class="menuitem">
-<a href="bookkeeperProgrammer.html">Programmer's guide</a>
-</div>
-</div>
-<div onclick="SwitchMenu('menu_1.4', 'skin/')" id="menu_1.4Title" class="menutitle">Admin &amp; Ops</div>
-<div id="menu_1.4" class="menuitemgroup">
 <div class="menuitem">
 <a href="zookeeperAdmin.html">Administrator's Guide</a>
 </div>
@@ -164,15 +149,18 @@ document.write("Last Published: " + document.lastModified);
 <div class="menuitem">
 <a href="zookeeperObservers.html">Observers Guide</a>
 </div>
+<div class="menuitem">
+<a href="zookeeperReconfig.html">Dynamic Reconfiguration</a>
 </div>
-<div onclick="SwitchMenu('menu_1.5', 'skin/')" id="menu_1.5Title" class="menutitle">Contributor</div>
-<div id="menu_1.5" class="menuitemgroup">
+</div>
+<div onclick="SwitchMenu('menu_1.4', 'skin/')" id="menu_1.4Title" class="menutitle">Contributor</div>
+<div id="menu_1.4" class="menuitemgroup">
 <div class="menuitem">
 <a href="zookeeperInternals.html">ZooKeeper Internals</a>
 </div>
 </div>
-<div onclick="SwitchMenu('menu_1.6', 'skin/')" id="menu_1.6Title" class="menutitle">Miscellaneous</div>
-<div id="menu_1.6" class="menuitemgroup">
+<div onclick="SwitchMenu('menu_1.5', 'skin/')" id="menu_1.5Title" class="menutitle">Miscellaneous</div>
+<div id="menu_1.5" class="menuitemgroup">
 <div class="menuitem">
 <a href="https://cwiki.apache.org/confluence/display/ZOOKEEPER">Wiki</a>
 </div>
@@ -273,15 +261,56 @@ document.write("Last Published: " + document.lastModified);
 </li>
 <li>[<a href='https://issues.apache.org/jira/browse/ZOOKEEPER-2229'>ZOOKEEPER-2229</a>] -         Several four-letter words are undocumented.
 </li>
-<li>[<a href='https://issues.apache.org/jira/browse/ZOOKEEPER-2281'>ZOOKEEPER-2281</a>] -         ZK Server startup fails if there are spaces in the JAVA_HOME path
+
+</ul>
+<a name="migration_code"></a>
+<h3 class="h4">Migrating Client Code</h3>
+<p>
+  The underlying client-server protocol has changed in version 3.0.0
+  of ZooKeeper. As a result clients must be upgraded along with
+  serving clusters to ensure proper operation of the system (old
+  pre-3.0.0 clients are not guaranteed to operate against upgraded
+  3.0.0 servers and vice-versa).
+</p>
+<a name="Watch+Management"></a>
+<h4>Watch Management</h4>
+<p>
+In previous releases of ZooKeeper any watches registered by clients were lost if the client lost a connection to a ZooKeeper server.
+This meant that developers had to track watches they were interested in and reregister them if a session disconnect event was recieved.
+In this release the client library tracks watches that a client has registered and reregisters the watches when a connection is made to a new server.
+Applications that still manually reregister interest should continue working properly as long as they are able to handle unsolicited watches.
+For example, an old application may register a watch for /foo and /goo, lose the connection, and reregister only /goo.
+As long as the application is able to recieve a notification for /foo, (probably ignoring it) it does not need to be changed.
+One caveat to the watch management: it is possible to miss an event for the creation and deletion of a znode if watching for creation and both the create and delete happens while the client is disconnected from ZooKeeper.
+</p>
+<p>
+This release also allows clients to specify call specific watch functions.
+This gives the developer the ability to modularize logic in different watch functions rather than cramming everything in the watch function attached to the ZooKeeper handle.
+Call specific watch functions receive all session events for as long as they are active, but will only receive the watch callbacks for which they are registered.
+</p>
+<a name="Java+API"></a>
+<h4>Java API</h4>
+<ol>
+  
+<li>
+<p>The java package structure has changed from <strong>com.yahoo.zookeeper*</strong> to <strong>org.apache.zookeeper*</strong>. This will probably effect all of your java code which makes use of ZooKeeper APIs (typically import statements)</p>
 </li>
 <li>[<a href='https://issues.apache.org/jira/browse/ZOOKEEPER-2295'>ZOOKEEPER-2295</a>] -         TGT refresh time logic is wrong
 </li>
 <li>[<a href='https://issues.apache.org/jira/browse/ZOOKEEPER-2311'>ZOOKEEPER-2311</a>] -         assert in setup_random
 </li>
-<li>[<a href='https://issues.apache.org/jira/browse/ZOOKEEPER-2337'>ZOOKEEPER-2337</a>] -         Fake &quot;invalid&quot; hostnames used in tests are sometimes valid
-</li>
-<li>[<a href='https://issues.apache.org/jira/browse/ZOOKEEPER-2340'>ZOOKEEPER-2340</a>] -         JMX is disabled even if JMXDISABLE is false
+
+</ol>
+<p>
+Also see <a href="http://zookeeper.apache.org/docs/current/api/index.html">the current java API</a>
+
+</p>
+<a name="C+API"></a>
+<h4>C API</h4>
+<ol>
+  
+<li>
+<p>A number of constants used in the client ZooKeeper API were renamed in order to reduce namespace collision, see <a href="https://issues.apache.org/jira/browse/ZOOKEEPER-6">ZOOKEEPER-6</a> for full details</p>
 </li>
 <li>[<a href='https://issues.apache.org/jira/browse/ZOOKEEPER-2347'>ZOOKEEPER-2347</a>] -         Deadlock shutting down zookeeper
 </li>

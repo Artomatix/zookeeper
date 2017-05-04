@@ -37,11 +37,6 @@ public class ZooKeeperThread extends Thread {
         }
     };
 
-    public ZooKeeperThread(Runnable thread, String threadName) {
-        super(thread, threadName);
-        setUncaughtExceptionHandler(uncaughtExceptionalHandler);
-    }
-
     public ZooKeeperThread(String threadName) {
         super(threadName);
         setUncaughtExceptionHandler(uncaughtExceptionalHandler);
@@ -57,6 +52,6 @@ public class ZooKeeperThread extends Thread {
      *            - exception object
      */
     protected void handleException(String thName, Throwable e) {
-        LOG.warn("Exception occured from thread {}", thName, e);
+        LOG.warn("Exception occurred from thread {}", thName, e);
     }
 }

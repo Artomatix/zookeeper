@@ -33,10 +33,10 @@ import javax.management.remote.JMXConnectorServer;
 import javax.management.remote.JMXConnectorServerFactory;
 import javax.management.remote.JMXServiceURL;
 
-import junit.framework.TestCase;
 
 import org.apache.zookeeper.jmx.CommonNames;
 import org.apache.zookeeper.jmx.MBeanRegistry;
+import org.junit.Assert;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -49,7 +49,7 @@ public class JMXEnv {
     public static void setUp() throws IOException {
         MBeanServer mbs = MBeanRegistry.getInstance().getPlatformMBeanServer();
         
-        JMXServiceURL url = new JMXServiceURL("service:jmx:rmi://");
+        JMXServiceURL url = new JMXServiceURL("service:jmx:rmi://127.0.0.1");
         cs = JMXConnectorServerFactory.newJMXConnectorServer(url, null, mbs);
         cs.start();
 
@@ -125,7 +125,7 @@ public class JMXEnv {
                 beans.removeAll(found);
             }
         } while ((expectedNames.length != found.size()) && (nTry < 600));
-        TestCase.assertEquals("expected " + Arrays.toString(expectedNames),
+        Assert.assertEquals("expected " + Arrays.toString(expectedNames),
                 expectedNames.length, found.size());
         return beans;
     }
@@ -148,7 +148,7 @@ public class JMXEnv {
         for (ObjectName bean : beans) {
             LOG.info("unexpected:" + bean.toString());
         }
-        TestCase.assertEquals(0, beans.size());
+        Assert.assertEquals(0, beans.size());
         return beans;
     }
     
@@ -183,6 +183,9 @@ public class JMXEnv {
                 if (foundUnexpected) {
                     break;
                 }
+                if (foundUnexpected) {
+                    break;
+                }
             }
         } while ((foundUnexpected) && (nTry < 600));
         if (foundUnexpected) {
@@ -190,7 +193,13 @@ public class JMXEnv {
             for (ObjectName bean : beans) {
                 LOG.info("bean:" + bean.toString());
             }
-            TestCase.fail(unexpectedName);
+        } while ((foundUnexpected) && (nTry < 600));
+        if (foundUnexpected) {
+            LOG.info("List of all beans follows:");
+            for (ObjectName bean : beans) {
+                LOG.info("bean:" + bean.toString());
+            }
+            Assert.fail(unexpectedName);
         }
     }
 
@@ -222,7 +231,6 @@ public class JMXEnv {
      * 
      * @throws IOException
      * @throws InterruptedException
-     * 
      */
     public static Set<ObjectName> ensureParent(String... expectedNames)
             throws IOException, InterruptedException {
@@ -255,9 +263,55 @@ public class JMXEnv {
                 beans.removeAll(found);
             }
         } while (expectedNames.length != found.size() && nTry < 120);
-        TestCase.assertEquals("expected " + Arrays.toString(expectedNames),
+        Assert.assertEquals("expected " + Arrays.toString(expectedNames),
                 expectedNames.length, found.size());
         return beans;
+    }
+
+    /**
+     * Ensure that the specified bean name and its attribute is registered. Note
+     * that these are components of the name. It waits in a loop up to 60
+     * seconds before failing if there is a mismatch. This will return the beans
+     * which are not matched.
+     *
+     * @param expectedName
+     *            - expected bean
+     * @param expectedAttribute
+     *            - expected attribute
+     * @return the value of the attribute
+     *
+     * @throws Exception
+     */
+    public static Object ensureBeanAttribute(String expectedName,
+            String expectedAttribute) throws Exception {
+        String value = "";
+        LOG.info("ensure bean:{}, attribute:{}", new Object[] { expectedName,
+                expectedAttribute });
+
+        Set<ObjectName> beans;
+        int nTry = 0;
+        do {
+            if (nTry++ > 0) {
+                Thread.sleep(500);
+            }
+            try {
+                beans = conn().queryNames(
+                        new ObjectName(CommonNames.DOMAIN + ":*"), null);
+            } catch (MalformedObjectNameException e) {
+                throw new RuntimeException(e);
+            }
+            LOG.info("expect:" + expectedName);
+            for (ObjectName bean : beans) {
+                // check the existence of name in bean
+                if (bean.toString().equals(expectedName)) {
+                    LOG.info("found:{} {}", new Object[] { expectedName, bean });
+                    return conn().getAttribute(bean, expectedAttribute);
+                }
+            }
+        } while (nTry < 120);
+        Assert.fail("Failed to find bean:" + expectedName + ", attribute:"
+                + expectedAttribute);
+        return value;
     }
 
     /**

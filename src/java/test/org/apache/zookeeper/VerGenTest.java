@@ -36,6 +36,7 @@ import org.junit.runners.Parameterized.Parameters;
  *
  */
 @RunWith(Parameterized.class)
+@Parameterized.UseParametersRunnerFactory(ZKParameterized.RunnerFactory.class)
 public class VerGenTest extends ZKTestCase {
     @Parameters
     public static Collection<Object[]> data() {
@@ -72,7 +73,7 @@ public class VerGenTest extends ZKTestCase {
     public void testGenFile() throws Exception {
         VerGen.Version v = VerGen.parseVersionString(input);
         File outputDir = ClientBase.createTmpDir();
-        VerGen.generateFile(outputDir, v, 1, "Nov1");
+        VerGen.generateFile(outputDir, v, "1", "Nov1");
         ClientBase.recursiveDelete(outputDir);
     }
 }
